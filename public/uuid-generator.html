@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ETA eReceipt UUID Generator</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #5d6a78;
+      --line: #d9dee7;
+      --accent: #0f766e;
+      --accent-dark: #0b5f59;
+      --danger: #b42318;
+      --code: #101828;
+      --soft: #edf7f5;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    .page-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .page-nav-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: #fff;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .page-nav-link:hover {
+      background: #f0f3f7;
+    }
+
+    .page-nav-link.active {
+      border-color: #a7d7d2;
+      background: var(--soft);
+      color: var(--accent-dark);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 24px rgba(16, 24, 40, 0.05);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    textarea,
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: 14px/1.5 Consolas, "Courier New", monospace;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 560px;
+      resize: vertical;
+      padding: 12px;
+    }
+
+    input {
+      height: 38px;
+      padding: 8px 10px;
+    }
+
+    textarea:focus,
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      min-height: 38px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--accent-dark);
+    }
+
+    button.secondary {
+      background: #fff;
+      border-color: var(--line);
+      color: var(--text);
+    }
+
+    button.secondary:hover {
+      background: #f3f5f7;
+    }
+
+    .result {
+      display: grid;
+      gap: 12px;
+    }
+
+    .empty-state {
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: #fbfcfd;
+      font-size: 14px;
+    }
+
+    .uuid-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .uuid-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 11px 12px;
+      background: var(--soft);
+      border-bottom: 1px solid #c9e8e2;
+    }
+
+    .receipt-label {
+      min-width: 0;
+      font-weight: 700;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .uuid-value,
+    .normalized {
+      margin: 0;
+      color: var(--code);
+      font-family: Consolas, "Courier New", monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .uuid-value {
+      padding: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    details {
+      border-top: 1px solid var(--line);
+    }
+
+    summary {
+      padding: 10px 12px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .normalized {
+      max-height: 180px;
+      overflow: auto;
+      padding: 0 12px 12px;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
+    .error {
+      color: var(--danger);
+      border: 1px solid #fecdca;
+      background: #fffbfa;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .hint {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      main {
+        width: min(100vw - 20px, 720px);
+        padding-top: 18px;
+      }
+
+      header,
+      .layout {
+        display: block;
+      }
+
+      .layout > .panel + .panel {
+        margin-top: 14px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      textarea {
+        min-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="page-nav" aria-label="App pages">
+      <a class="page-nav-link" href="index.html">Noon CSV Receipt Builder</a>
+      <a class="page-nav-link active" href="uuid-generator.html">ETA UUID Generator</a>
+    </nav>
+
+    <header>
+      <div>
+        <h1>ETA eReceipt UUID Generator</h1>
+        <p class="subtitle">Paste the JSON submission, set any placeholder values, and generate SHA-256 UUIDs from the normalized receipt content.</p>
+      </div>
+    </header>
+
+    <section class="layout">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Request JSON</h2>
+          <button class="secondary" id="loadSample" type="button">Load sample</button>
+        </div>
+        <div class="panel-body">
+          <div class="controls">
+            <div>
+              <label for="receiptNumber">Receipt number replacement</label>
+              <input id="receiptNumber" value="R12345" autocomplete="off">
+            </div>
+            <div>
+              <label for="receiptNumberToken">Receipt number token</label>
+              <input id="receiptNumberToken" value="{{receiptNumber1}}" autocomplete="off">
+            </div>
+          </div>
+
+          <label for="jsonInput">Submission body</label>
+          <textarea id="jsonInput" spellcheck="false" placeholder="{ &quot;receipts&quot;: [ ... ] }"></textarea>
+
+          <div class="actions">
+            <button id="generate" type="button">Generate UUID</button>
+            <button class="secondary" id="clear" type="button">Clear</button>
+          </div>
+          <p class="hint">The receipt's own <strong>header.uuid</strong> is forced to empty while hashing. Numbers are preserved from the pasted text.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Generated UUIDs</h2>
+          <button class="secondary" id="copyAll" type="button">Copy all</button>
+        </div>
+        <div class="panel-body">
+          <div id="output" class="result">
+            <div class="empty-state">Results will appear here.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const sampleJson = `{
+    "receipts": [
+        {
+            "header": {
+                "dateTimeIssued": "2026-05-18T00:34:00Z",
+                "receiptNumber": "{{receiptNumber1}}",
+                "uuid": "{{receiptUuid1}}",
+                "previousUUID": "",
+                "referenceOldUUID": "",
+                "currency": "EGP",
+                "exchangeRate": 0,
+                "sOrderNameCode": "sOrderNameCode",
+                "orderdeliveryMode": "",
+                "grossWeight": 6.58,
+                "netWeight": 6.89
+            },
+            "documentType": {
+                "receiptType": "S",
+                "typeVersion": "1.2"
+            },
+            "seller": {
+                "rin": "776878123",
+                "companyTradeName": "محمد عبدالباسط عبدالرحمن عبدالرحيم",
+                "branchCode": "0",
+                "branchAddress": {
+                    "country": "EG",
+                    "governate": "cairo",
+                    "regionCity": "city center",
+                    "street": "16 street",
+                    "buildingNumber": "14BN",
+                    "postalCode": "74235",
+                    "floor": "1F",
+                    "room": "3R",
+                    "landmark": "tahrir square",
+                    "additionalInformation": "talaat harb street"
+                },
+                "deviceSerialNumber": "Sofy123",
+                "syndicateLicenseNumber": "1000056",
+                "activityCode": "4791"
+            },
+            "buyer": {
+                "type": "P",
+                "id": "313717919",
+                "name": "taxpayer 1",
+                "mobileNumber": "+201020567462",
+                "paymentNumber": "987654"
+            },
+            "itemData": [
+                {
+                    "internalCode": "ABC123",
+                    "description": "Samsung A02 32GB_LTE_BLACK_DS_SM-A022FZKDMEB_A022 _ A022_SM-A022FZKDMEB",
+                    "itemType": "EGS",
+                    "itemCode": "EG-776878123-776878123-CHAR100BOX",
+                    "unitType": "EA",
+                    "quantity": 1,
+                    "unitPrice": 100.00,
+                    "netSale": 100.00,
+                    "totalSale": 100.00,
+                    "total": 100.00
+                }
+            ],
+            "totalSales": 100.00,
+            "netAmount": 100.00,
+            "feesAmount": 0,
+            "totalAmount": 100.00,
+            "taxTotals": [
+                {
+                    "taxType": "T1",
+                    "amount": 14
+                }
+            ],
+            "paymentMethod": "C",
+            "adjustment": 0
+        }
+    ]
+}`;
+
+    const jsonInput = document.getElementById("jsonInput");
+    const output = document.getElementById("output");
+    const results = [];
+
+    class SourceJsonParser {
+      constructor(source) {
+        this.source = source;
+        this.index = 0;
+      }
+
+      parse() {
+        this.skipWhitespace();
+        const value = this.parseValue();
+        this.skipWhitespace();
+        if (this.index !== this.source.length) {
+          throw new Error(`Unexpected text at position ${this.index}`);
+        }
+        return value;
+      }
+
+      skipWhitespace() {
+        while (/\s/.test(this.source[this.index])) {
+          this.index += 1;
+        }
+      }
+
+      parseValue() {
+        this.skipWhitespace();
+        const char = this.source[this.index];
+        if (char === "\"") return { type: "primitive", raw: this.parseString() };
+        if (char === "{") return this.parseObject();
+        if (char === "[") return this.parseArray();
+        return this.parseLiteral();
+      }
+
+      parseString() {
+        this.index += 1;
+        const start = this.index;
+        let escaped = false;
+
+        while (this.index < this.source.length) {
+          const char = this.source[this.index];
+          if (escaped) {
+            escaped = false;
+          } else if (char === "\\") {
+            escaped = true;
+          } else if (char === "\"") {
+            const raw = this.source.slice(start, this.index);
+            this.index += 1;
+            return raw;
+          }
+          this.index += 1;
+        }
+
+        throw new Error("Unterminated string value");
+      }
+
+      parseLiteral() {
+        const start = this.index;
+        while (
+          this.index < this.source.length &&
+          !/[\s,\}\]]/.test(this.source[this.index])
+        ) {
+          this.index += 1;
+        }
+        const raw = this.source.slice(start, this.index);
+        if (!raw) throw new Error(`Expected value at position ${this.index}`);
+        return { type: "primitive", raw };
+      }
+
+      parseObject() {
+        this.index += 1;
+        const props = [];
+        this.skipWhitespace();
+        if (this.source[this.index] === "}") {
+          this.index += 1;
+          return { type: "object", props };
+        }
+
+        while (true) {
+          this.skipWhitespace();
+          if (this.source[this.index] !== "\"") {
+            throw new Error(`Expected property name at position ${this.index}`);
+          }
+          const name = this.parseString();
+          this.skipWhitespace();
+          if (this.source[this.index] !== ":") {
+            throw new Error(`Expected ':' after ${name}`);
+          }
+          this.index += 1;
+          props.push({ name, value: this.parseValue() });
+          this.skipWhitespace();
+          const char = this.source[this.index];
+          this.index += 1;
+          if (char === "}") break;
+          if (char !== ",") throw new Error(`Expected ',' or '}' at position ${this.index - 1}`);
+        }
+
+        return { type: "object", props };
+      }
+
+      parseArray() {
+        this.index += 1;
+        const items = [];
+        this.skipWhitespace();
+        if (this.source[this.index] === "]") {
+          this.index += 1;
+          return { type: "array", items };
+        }
+
+        while (true) {
+          items.push(this.parseValue());
+          this.skipWhitespace();
+          const char = this.source[this.index];
+          this.index += 1;
+          if (char === "]") break;
+          if (char !== ",") throw new Error(`Expected ',' or ']' at position ${this.index - 1}`);
+        }
+
+        return { type: "array", items };
+      }
+    }
+
+    function serializeNode(node) {
+      if (node.type === "primitive") {
+        return `"${node.raw}"`;
+      }
+
+      if (node.type === "object") {
+        return node.props.map((prop) => serializeProperty(prop.name, prop.value)).join("");
+      }
+
+      throw new Error("Array values must be serialized through their property name");
+    }
+
+    function serializeProperty(name, value) {
+      const upperName = name.toUpperCase();
+      if (value.type === "array") {
+        return `"${upperName}"` + value.items.map((item) => `"${upperName}"${serializeNode(item)}`).join("");
+      }
+      return `"${upperName}"${serializeNode(value)}`;
+    }
+
+    function findProp(objectNode, name) {
+      if (!objectNode || objectNode.type !== "object") return null;
+      return objectNode.props.find((prop) => prop.name === name) || null;
+    }
+
+    function cloneNode(node) {
+      if (node.type === "primitive") return { type: "primitive", raw: node.raw };
+      if (node.type === "array") return { type: "array", items: node.items.map(cloneNode) };
+      return {
+        type: "object",
+        props: node.props.map((prop) => ({ name: prop.name, value: cloneNode(prop.value) }))
+      };
+    }
+
+    function replacePrimitive(node, token, replacement) {
+      if (!token) return;
+      if (node.type === "primitive") {
+        if (node.raw === token) node.raw = replacement;
+        return;
+      }
+      if (node.type === "array") {
+        node.items.forEach((item) => replacePrimitive(item, token, replacement));
+        return;
+      }
+      node.props.forEach((prop) => replacePrimitive(prop.value, token, replacement));
+    }
+
+    function setReceiptUuidEmpty(receipt) {
+      const header = findProp(receipt, "header");
+      if (!header || header.value.type !== "object") {
+        throw new Error("Receipt is missing header object");
+      }
+      const uuid = findProp(header.value, "uuid");
+      if (!uuid) {
+        throw new Error("Receipt header is missing uuid field");
+      }
+      uuid.value = { type: "primitive", raw: "" };
+    }
+
+    function getReceiptNumber(receipt, fallbackIndex) {
+      const header = findProp(receipt, "header");
+      const receiptNumber = header && findProp(header.value, "receiptNumber");
+      return receiptNumber && receiptNumber.value.type === "primitive"
+        ? receiptNumber.value.raw || `Receipt ${fallbackIndex + 1}`
+        : `Receipt ${fallbackIndex + 1}`;
+    }
+
+    function extractReceipts(root) {
+      if (root.type === "object") {
+        const receipts = findProp(root, "receipts");
+        if (receipts && receipts.value.type === "array") {
+          return receipts.value.items;
+        }
+        if (findProp(root, "header")) {
+          return [root];
+        }
+      }
+      throw new Error("Paste either a receipt object or a submission object with a receipts array");
+    }
+
+    async function sha256Hex(text) {
+      const data = new TextEncoder().encode(text);
+      const digest = await crypto.subtle.digest("SHA-256", data);
+      return [...new Uint8Array(digest)]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    function renderError(error) {
+      results.length = 0;
+      output.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+    }
+
+    function renderResults(items) {
+      results.length = 0;
+      results.push(...items);
+      if (!items.length) {
+        output.innerHTML = `<div class="empty-state">No receipts were found.</div>`;
+        return;
+      }
+
+      output.innerHTML = items.map((item, index) => `
+        <article class="uuid-card">
+          <div class="uuid-head">
+            <div class="receipt-label">${escapeHtml(item.receiptNumber)}</div>
+            <button class="secondary copy-one" data-index="${index}" type="button">Copy</button>
+          </div>
+          <pre class="uuid-value">${escapeHtml(item.uuid)}</pre>
+          <details>
+            <summary>Normalized text</summary>
+            <pre class="normalized">${escapeHtml(item.normalized)}</pre>
+          </details>
+        </article>
+      `).join("");
+
+      output.querySelectorAll(".copy-one").forEach((button) => {
+        button.addEventListener("click", () => {
+          const item = results[Number(button.dataset.index)];
+          navigator.clipboard.writeText(item.uuid);
+        });
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function generate() {
+      try {
+        const root = new SourceJsonParser(jsonInput.value).parse();
+        const token = document.getElementById("receiptNumberToken").value;
+        const replacement = document.getElementById("receiptNumber").value;
+        if (token && replacement) {
+          replacePrimitive(root, token, replacement);
+        }
+
+        const receipts = extractReceipts(root);
+        const generated = [];
+        for (let index = 0; index < receipts.length; index += 1) {
+          const receipt = cloneNode(receipts[index]);
+          setReceiptUuidEmpty(receipt);
+          const normalized = serializeNode(receipt);
+          generated.push({
+            receiptNumber: getReceiptNumber(receipt, index),
+            uuid: await sha256Hex(normalized),
+            normalized
+          });
+        }
+        renderResults(generated);
+      } catch (error) {
+        renderError(error);
+      }
+    }
+
+    document.getElementById("generate").addEventListener("click", generate);
+    document.getElementById("clear").addEventListener("click", () => {
+      jsonInput.value = "";
+      renderResults([]);
+    });
+    document.getElementById("loadSample").addEventListener("click", () => {
+      jsonInput.value = sampleJson;
+      generate();
+    });
+    document.getElementById("copyAll").addEventListener("click", () => {
+      navigator.clipboard.writeText(results.map((item) => `${item.receiptNumber}: ${item.uuid}`).join("\n"));
+    });
+
+    jsonInput.value = sampleJson;
+    generate();
+  </script>
+</body>
+</html>

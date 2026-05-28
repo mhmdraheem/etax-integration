@@ -1,0 +1,53 @@
+{
+    "receipts": [
+        {
+            "header": {
+                "dateTimeIssued": "2026-05-24T00:34:00Z",
+                "receiptNumber": "{{receiptNumber1}}",
+                "uuid": "{{returnreceiptUuid1}}",
+                "previousUUID": "",
+				"referenceUUID":"8bab36899b875e950000f48a5e970db518108df0aa4be0e81cce7d2a3f55dce7",
+                "currency": "EGP"
+            },
+            "documentType": {
+                "receiptType": "R",
+                "typeVersion": "1.2"
+            },
+            "seller": {
+                "rin": "776878123",
+                "companyTradeName": "محمد عبدالباسط عبدالرحمن عبدالرحيم",
+                "branchCode": "0",
+                "branchAddress": {
+                    "country": "EG",
+                    "governate": "Giza",
+                    "regionCity": "6th of October",
+                    "street": "Sakan Misr",
+                    "buildingNumber": "93"
+                },
+                "deviceSerialNumber": "PREPROD_SERIAL_REMOVED",
+                "activityCode": "4791"
+            },
+            "buyer": {
+                "type": "P"
+            },
+            "itemData": [
+                {
+                    "internalCode": "ABC123",
+                    "description": "Charcoal box x 100 pieces",
+                    "itemType": "EGS",
+                    "itemCode": "EG-776878123-776878123-CHAR100BOX",
+                    "unitType": "EA",
+                    "quantity": 1,
+                    "unitPrice": 100.00,
+                    "netSale": 100.00,
+                    "totalSale": 100.00,
+                    "total": 100.00
+                }
+            ],
+            "totalSales": 100.00,
+            "netAmount": 100.00,
+            "totalAmount": 100.00,
+            "paymentMethod": "C"
+        }
+    ]
+}

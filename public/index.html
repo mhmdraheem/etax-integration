@@ -1,0 +1,93 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noon CSV Receipt Builder</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <nav class="page-nav" aria-label="App pages">
+      <a class="page-nav-link active" href="index.html">Noon CSV Receipt Builder</a>
+      <a class="page-nav-link" href="uuid-generator.html">ETA UUID Generator</a>
+    </nav>
+
+    <header>
+      <div>
+        <h1>Noon CSV Receipt Builder</h1>
+        <p class="subtitle">Upload invoices and credit notes, review generated ETA receipts, then download submission JSON files in a ZIP archive.</p>
+      </div>
+      <div class="top-actions">
+        <label class="file-control">
+          Upload CSV
+          <input id="csvFile" type="file" accept=".csv,text/csv">
+        </label>
+        <button id="processBtn" type="button" disabled>Process</button>
+      </div>
+    </header>
+
+    <div class="options">
+      <span id="fileName">No CSV selected</span>
+    </div>
+
+    <section class="layout">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Processed Orders</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <colgroup>
+              <col style="width: 38px">
+              <col style="width: 24%">
+              <col style="width: 22%">
+              <col style="width: 10%">
+              <col style="width: 10%">
+              <col style="width: 12%">
+              <col style="width: 16%">
+              <col style="width: 6%">
+            </colgroup>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Number</th>
+                <th>Document</th>
+                <th>Type</th>
+                <th class="num">Lines x Qty</th>
+                <th class="num">Amount</th>
+                <th>Date</th>
+                <th>Check</th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody">
+              <tr><td colspan="8"><div class="empty">Upload a Noon CSV file to begin.</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="summary">
+          <div class="metric"><span>Total receipts</span><strong id="totalCount">0</strong></div>
+          <div class="metric"><span>Orders value</span><strong id="salesValue">0.00</strong></div>
+          <div class="metric"><span>Returns value</span><strong id="returnsValue">0.00</strong></div>
+          <div class="metric"><span>JSON files</span><strong id="jsonCount">0</strong></div>
+        </div>
+        <div class="bottom-actions">
+          <span id="statusText" class="status">Ready.</span>
+          <button id="viewFiles" class="secondary" type="button" disabled>View JSON file(s)</button>
+          <button id="downloadZip" type="button" disabled>Download ZIP archive</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">JSON Preview</h2>
+          <button id="copyJson" class="secondary" type="button" disabled>Copy</button>
+        </div>
+        <pre id="jsonPreview" class="json-view">Select a processed row to preview the JSON object.</pre>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
+
