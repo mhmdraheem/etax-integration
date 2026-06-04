@@ -32,7 +32,7 @@ const receiptTemplate = {
           "street": "Sakan Misr",
           "buildingNumber": "93"
         },
-        "deviceSerialNumber": "PREPROD_SERIAL_REMOVED",
+        "deviceSerialNumber": "",
         "activityCode": "4791"
       },
       "buyer": { "type": "P" },
@@ -71,7 +71,7 @@ const returnTemplate = {
           "street": "Sakan Misr",
           "buildingNumber": "93"
         },
-        "deviceSerialNumber": "PREPROD_SERIAL_REMOVED",
+        "deviceSerialNumber": "",
         "activityCode": "4791"
       },
       "buyer": { "type": "P" },
@@ -121,6 +121,8 @@ const els = {
   csvFile: document.getElementById("csvFile"),
   processBtn: document.getElementById("processBtn"),
   fileName: document.getElementById("fileName"),
+  includeOrders: document.getElementById("includeOrders"),
+  includeReturns: document.getElementById("includeReturns"),
   ordersBody: document.getElementById("ordersBody"),
   totalCount: document.getElementById("totalCount"),
   salesValue: document.getElementById("salesValue"),
@@ -129,16 +131,24 @@ const els = {
   statusText: document.getElementById("statusText"),
   viewFiles: document.getElementById("viewFiles"),
   downloadZip: document.getElementById("downloadZip"),
+  sendSdk: document.getElementById("sendSdk"),
   jsonPreview: document.getElementById("jsonPreview"),
-  copyJson: document.getElementById("copyJson")
+  copyJson: document.getElementById("copyJson"),
+  sdkModal: document.getElementById("sdkModal"),
+  closeSdkModal: document.getElementById("closeSdkModal"),
+  sdkSpinner: document.getElementById("sdkSpinner"),
+  sdkSummary: document.getElementById("sdkSummary"),
+  sdkResponse: document.getElementById("sdkResponse")
 };
 
 let csvText = "";
+let csvRows = [];
 let processed = [];
 let submissionFiles = [];
 let zipBlob = null;
 let selectedIndex = -1;
 let expanded = new Set();
+let currentBatchId = null;
 
 class SourceJsonParser {
   constructor(source) {
@@ -473,8 +483,8 @@ function collectReasons(group, lines, receiptIndex) {
     const price = parseFloat((row["Price Including VAT (Document Currency)"] || "").replace(/,/g, ""));
     if (!Number.isFinite(price)) reasons.push(`Row ${row.__row}: invalid price`);
   });
-  if (group.isReturn && !receiptIndex[group.sourceDoc] && !receiptIndex[group.sourceInvoice]) {
-    reasons.push("Return reference UUID not found in this batch or database history");
+  if (group.isReturn && !receiptIndex[group.sourceDoc]) {
+    reasons.push("Return reference UUID not found in database history for this Source Doc Nr");
   }
   if (!lines.length) reasons.push("No item lines found");
   return [...new Set(reasons)];
@@ -500,9 +510,7 @@ async function buildReceipts(records, includeVat) {
     receipt.header.previousUUID = previousUUID;
     receipt.header.currency = "EGP";
     if (group.isReturn) {
-      console.log(group.sourceDoc)
-      console.log(group.sourceInvoice)
-      receipt.header.referenceUUID = receiptIndex[group.sourceDoc] || receiptIndex[group.sourceInvoice] || "";
+      receipt.header.referenceUUID = receiptIndex[group.sourceDoc] || "";
     }
     receipt.documentType.receiptType = group.isReturn ? "R" : "S";
     receipt.itemData = lines.map((line) => line.item);
@@ -516,11 +524,6 @@ async function buildReceipts(records, includeVat) {
     }
     receipt.header.uuid = await calculateUuid(receipt);
     previousUUID = receipt.header.uuid;
-
-    if (!group.isReturn) {
-      if (group.number) receiptIndex[group.number] = receipt.header.uuid;
-      if (group.sourceDoc) receiptIndex[group.sourceDoc] = receipt.header.uuid;
-    }
 
     const reasons = collectReasons(group, lines, receiptIndex);
     receipts.push({
@@ -645,6 +648,13 @@ function createZip(files) {
   return new Blob([...localParts, ...centralParts, new Uint8Array(end)], { type: "application/zip" });
 }
 
+function shouldIncludeRow(row) {
+  const docType = (row["Document Type"] || "").toLowerCase();
+  if (docType === "invoice") return els.includeOrders.checked;
+  if (docType === "creditnote") return els.includeReturns.checked;
+  return false;
+}
+
 async function saveBatch() {
   if (!processed.length || !saveBatchLocally) return;
   const batchNumber = `BATCH-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 17)}-${crypto.randomUUID().slice(0, 8)}`;
@@ -658,13 +668,17 @@ async function saveBatch() {
       sourceInvoice: item.group.sourceInvoice,
       sourceDoc: item.group.sourceDoc,
       request: item.receipt,
-      uuid: item.receipt.header.uuid
+      uuid: item.receipt.header.uuid,
+      status: item.reasons.length ? "invalid" : "valid",
+      submitted: false
     }))
   };
-  await apiRequest("/batches", {
+  const result = await apiRequest("/batches", {
     method: "POST",
     body: JSON.stringify(batch)
   });
+  currentBatchId = result.batchId;
+  return result.batchId;
 }
 
 function renderTable() {
@@ -674,6 +688,7 @@ function renderTable() {
   }
   els.ordersBody.innerHTML = processed.map((item, index) => {
     const rowClass = item.group.isReturn ? "return-row" : "sale-row";
+    const issueClass = item.reasons.length ? " issue-row" : "";
     const selected = index === selectedIndex ? " selected" : "";
     const isExpanded = expanded.has(index);
     const warning = item.reasons.length ? `<span class="alert" title="${escapeHtml(item.reasons.join("\n"))}">!</span>` : "";
@@ -700,14 +715,14 @@ function renderTable() {
         </td>
       </tr>` : "";
     return `
-      <tr class="${rowClass}${selected}" data-index="${index}">
+      <tr class="${rowClass}${issueClass}${selected}" data-index="${index}">
         <td><button class="toggle" type="button" data-action="expand" data-index="${index}" aria-label="Expand row">${isExpanded ? "v" : ">"}</button></td>
         <td class="mono">${escapeHtml(item.group.number || "Missing")}</td>
         <td class="mono">${escapeHtml(item.group.sourceDoc || "Missing")}</td>
         <td>${item.type}</td>
         <td class="num">${item.lines.length}x${item.lines.reduce((sum, line) => sum + line.item.quantity, 0)}</td>
         <td class="num">${money(item.amount)}</td>
-        <td>${escapeHtml(item.receipt.header.dateTimeIssued || "Missing")}</td>
+        <td class="date-cell">${escapeHtml(item.receipt.header.dateTimeIssued || "Missing")}</td>
         <td>${warning}</td>
       </tr>
       ${lines}
@@ -716,9 +731,11 @@ function renderTable() {
 }
 
 function renderSummary() {
+  const orderCount = processed.filter((item) => !item.group.isReturn).length;
+  const returnCount = processed.filter((item) => item.group.isReturn).length;
   const sales = processed.filter((item) => !item.group.isReturn).reduce((sum, item) => sum + item.amount, 0);
   const returns = processed.filter((item) => item.group.isReturn).reduce((sum, item) => sum + item.amount, 0);
-  els.totalCount.textContent = String(processed.length);
+  els.totalCount.textContent = `${orderCount} Receipts, ${returnCount} Returns`;
   els.salesValue.textContent = money(sales);
   els.returnsValue.textContent = money(returns);
   els.jsonCount.textContent = String(submissionFiles.length);
@@ -744,6 +761,7 @@ function updateButtons() {
   const hasAlerts = processed.some((item) => item.reasons.length);
   els.viewFiles.disabled = !submissionFiles.length;
   els.downloadZip.disabled = !zipBlob || hasAlerts;
+  els.sendSdk.disabled = !processed.length || !zipBlob;
   els.copyJson.disabled = !processed.length && !submissionFiles.length;
 }
 
@@ -769,37 +787,55 @@ function downloadBlob(blob, fileName) {
 
 async function processCsv() {
   try {
-    els.statusText.textContent = "Processing CSV...";
-    const rows = parseCsv(csvText);
-    if (!rows.length) throw new Error("The CSV file has no data rows.");
-    processed = await buildReceipts(rows, includeVATDefault);
-    submissionFiles = splitSubmissionFiles(processed);
-    zipBlob = createZip(submissionFiles);
-    const hasAlerts = processed.some((item) => item.reasons.length);
-    if (zipBlob.size > maxZipBytes) {
-      els.statusText.textContent = "ZIP is larger than 25 MB. Reduce the CSV size and process again.";
-    } else if (hasAlerts) {
-      els.statusText.textContent = `Processed ${processed.length} receipt(s), but ZIP download is disabled until alerts are fixed.`;
-    } else {
-      //await saveBatch();
-      //els.statusText.textContent = `Processed ${processed.length} receipt(s) into ${submissionFiles.length} JSON file(s).`;
-    }
-    selectedIndex = processed.length ? 0 : -1;
-    expanded = new Set();
-    renderTable();
-    renderSummary();
-    if (processed.length) selectRow(0);
-    updateButtons();
+    csvRows = csvRows.length ? csvRows : parseCsv(csvText);
+    await rebuildSelectedOutputs(true);
   } catch (error) {
-    processed = [];
-    submissionFiles = [];
-    zipBlob = null;
-    renderTable();
-    renderSummary();
-    updateButtons();
-    els.jsonPreview.textContent = String(error.message || error);
-    els.statusText.textContent = "Processing failed.";
+    renderProcessingError(error);
   }
+}
+
+async function rebuildSelectedOutputs(saveToApi) {
+  els.statusText.textContent = saveToApi ? "Processing CSV..." : "Updating selected rows...";
+  if (!csvRows.length) throw new Error("The CSV file has no data rows.");
+  const selectedRows = csvRows.filter(shouldIncludeRow);
+  if (!selectedRows.length) throw new Error("Select Orders, Returns, or both before processing.");
+
+  processed = await buildReceipts(selectedRows, includeVATDefault);
+  submissionFiles = splitSubmissionFiles(processed);
+  zipBlob = createZip(submissionFiles);
+  currentBatchId = null;
+  const hasAlerts = processed.some((item) => item.reasons.length);
+  selectedIndex = processed.length ? 0 : -1;
+  expanded = new Set();
+  renderTable();
+  renderSummary();
+  if (processed.length) selectRow(0);
+  updateButtons();
+
+  if (zipBlob.size > maxZipBytes) {
+    els.statusText.textContent = "ZIP is larger than 25 MB. Reduce the CSV size and process again.";
+  } else if (hasAlerts) {
+    els.statusText.textContent = `Showing ${processed.length} selected receipt(s), but ZIP download is disabled until alerts are fixed.`;
+  } else if (saveToApi) {
+    await saveBatch();
+    els.statusText.textContent = `Processed ${processed.length} selected receipt(s) into ${submissionFiles.length} JSON file(s).`;
+  } else {
+    els.statusText.textContent = `Showing ${processed.length} selected receipt(s). Click Process to save them to the database.`;
+  }
+}
+
+function renderProcessingError(error) {
+  processed = [];
+  submissionFiles = [];
+  zipBlob = null;
+  selectedIndex = -1;
+  currentBatchId = null;
+  expanded = new Set();
+  renderTable();
+  renderSummary();
+  updateButtons();
+  els.jsonPreview.textContent = String(error.message || error);
+  els.statusText.textContent = "Processing failed.";
 }
 
 els.csvFile.addEventListener("change", async () => {
@@ -808,15 +844,51 @@ els.csvFile.addEventListener("change", async () => {
   csvText = await file.text();
   els.fileName.textContent = file.name;
   els.processBtn.disabled = false;
-  els.statusText.textContent = "CSV loaded. Ready to process.";
+  csvRows = parseCsv(csvText);
+  try {
+    await rebuildSelectedOutputs(false);
+  } catch (error) {
+    renderProcessingError(error);
+  }
 });
 
 els.processBtn.addEventListener("click", processCsv);
+els.includeOrders.addEventListener("change", async () => {
+  els.processBtn.disabled = !csvText;
+  if (!csvRows.length) {
+    els.statusText.textContent = "Ready.";
+    return;
+  }
+  try {
+    await rebuildSelectedOutputs(false);
+  } catch (error) {
+    renderProcessingError(error);
+  }
+});
+els.includeReturns.addEventListener("change", async () => {
+  els.processBtn.disabled = !csvText;
+  if (!csvRows.length) {
+    els.statusText.textContent = "Ready.";
+    return;
+  }
+  try {
+    await rebuildSelectedOutputs(false);
+  } catch (error) {
+    renderProcessingError(error);
+  }
+});
 els.viewFiles.addEventListener("click", renderFilesPreview);
 els.downloadZip.addEventListener("click", () => {
   if (zipBlob) downloadBlob(zipBlob, `noon-eta-submissions-${new Date().toISOString().slice(0, 10)}.zip`);
 });
+els.sendSdk.addEventListener("click", submitToSdk);
 els.copyJson.addEventListener("click", () => navigator.clipboard.writeText(els.jsonPreview.textContent));
+els.closeSdkModal.addEventListener("click", () => {
+  els.sdkModal.hidden = true;
+});
+els.sdkModal.addEventListener("click", (event) => {
+  if (event.target.classList.contains("modal-backdrop")) els.sdkModal.hidden = true;
+});
 els.ordersBody.addEventListener("click", (event) => {
   const selectedText = window.getSelection ? window.getSelection().toString() : "";
   if (selectedText.trim()) return;
@@ -832,3 +904,28 @@ els.ordersBody.addEventListener("click", (event) => {
   const row = event.target.closest("tr[data-index]");
   if (row) selectRow(Number(row.dataset.index));
 });
+
+async function submitToSdk() {
+  try {
+    els.sdkModal.hidden = false;
+    els.sdkSpinner.hidden = false;
+    els.sdkSummary.textContent = "";
+    els.sdkResponse.textContent = "";
+    els.sendSdk.disabled = true;
+    els.statusText.textContent = "Saving batch and sending to SDK...";
+    if (!currentBatchId) {
+      await saveBatch();
+    }
+    const result = await apiRequest(`/batches/${currentBatchId}/submit`, { method: "POST" });
+    els.sdkSummary.textContent = result.summary || `Batch status: ${result.status || "unknown"}`;
+    els.sdkResponse.textContent = JSON.stringify(result.response || result, null, 2);
+    els.statusText.textContent = `SDK submission finished: ${result.status || "unknown"}.`;
+  } catch (error) {
+    els.sdkSummary.textContent = "SDK submission failed.";
+    els.sdkResponse.textContent = String(error.message || error);
+    els.statusText.textContent = "SDK submission failed.";
+  } finally {
+    els.sdkSpinner.hidden = true;
+    updateButtons();
+  }
+}

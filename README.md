@@ -36,6 +36,26 @@ Default connection:
 
 On startup, the backend tries to create the configured database when the MySQL user has permission, then creates/updates the required tables. You can also run [database/schema.sql](database/schema.sql) manually.
 
+## SDK Configuration
+
+Set these values in `.env` before using **Send to SDK**:
+
+- `SDK_AUTH_URL`
+- `SDK_SUBMIT_RECEIPTS_URL`
+- `SDK_SUBMIT_RETURN_RECEIPTS_URL`
+- `SDK_GET_SUBMISSION_URL`
+- `SDK_CLIENT_ID`
+- `SDK_CLIENT_SECRET`
+- `SDK_USERNAME`
+- `SDK_PASSWORD`
+- `SDK_AUTH_TOKEN_PATH`
+- `SDK_POLL_INTERVAL_MS`
+- `SDK_POLL_MAX_ATTEMPTS`
+
+`SDK_GET_SUBMISSION_URL` can include `{submissionID}` or `{submissionId}` as a placeholder.
+
+If your SDK authentication body needs a custom JSON payload, set `SDK_AUTH_BODY` to a JSON string. Otherwise the backend sends `clientId`, `clientSecret`, `username`, and `password`.
+
 ## Pages
 
 - `http://localhost:3000/index.html` - Noon CSV Receipt Builder

@@ -1,0 +1,178 @@
+
+// Submit receipt accepted and passed initial validations
+// Single ducument
+{
+    "submissionId": "26ZRE87W22TF81HXGC1ZK6TK10",
+    "acceptedDocuments": [
+        {
+            "uuid": "e1c575600a7e737c058fae80bdf3ecd65bd4b7cb2a1d896fa8616e6875d70ed6",
+            "longId": "8G1HRMNQZZ1D4687GC1ZK6TK10xsSZZr1780486210",
+            "receiptNumber": "R12345",
+            "hashKey": "x1PATFtwrohm4R88358o3JWErD62bBTVsZcFZJS5PWM="
+        }
+    ],
+    "rejectedDocuments": [],
+    "header": {
+        "statusCode": "Success",
+        "code": "Success",
+        "details": [],
+        "correlationId": "0HNKU4UL07HT0:0000000B",
+        "requestTime": "2026-06-03T11:30:10.9210837Z",
+        "responseProcessingTimeInTicks": 646209
+    }
+}
+
+// batch
+{
+    "submissionId": "27HKBN3S8GYKT4BF64F0N6TK10",
+    "acceptedDocuments": [
+        {
+            "uuid": "22dd32b5bb123c8acbf7ffcd55314d5eed51313a1b1d34fb69286ae17765a3e0",
+            "longId": "605YXJQ7PZXS7J1364F0N6TK10CWHBcu1780487306",
+            "receiptNumber": "1",
+            "hashKey": "sdntPsBoDemaovFOm0erW1P/fbmb8tdAhKTbOQfOZSM="
+        },
+        {
+            "uuid": "036a42870a71d21d34c040425802287264354a315ce580cd5727bc4fca2849c3",
+            "longId": "CQHZ2ERXHTWF2QRE64F0N6TK109MUvYI1780487306",
+            "receiptNumber": "2",
+            "hashKey": "kpyMI6GhgRgtMS93W688bc7jHJKNT9r2gZBxunjSIXU="
+        },
+        {
+            "uuid": "d7feb16487abded5e007e10848af1cee2c4ea6622850d74d013a8541b2009e3b",
+            "longId": "XQ6C4HFKGHWG84VX64F0N6TK10llcQ4L1780487306",
+            "receiptNumber": "3",
+            "hashKey": "xekNB6SXlLTLZKbukWsBMU9Hz2mDPvHr7UHxCuNVnWY="
+        }
+    ],
+    "rejectedDocuments": [],
+    "header": {
+        "statusCode": "Success",
+        "code": "Success",
+        "details": [],
+        "correlationId": "0HNKU4UL07HT4:0000001B",
+        "requestTime": "2026-06-03T11:48:26.3364985Z",
+        "responseProcessingTimeInTicks": 817336
+    }
+}
+
+// submission is still in progress in the etax system
+{
+    "submissionUuid": "7FXM2W51FG9530ZKHY93M6TK10",
+    "sellerId": "776878123",
+    "dateTimeReceived": "2026-06-03T11:32:30.8014329Z",
+    "submitterName": "MyERP",
+    "submissionChannel": "ERP",
+    "receiptsCount": 1,
+    "invalidReceiptsCount": 0,
+    "status": "InProgress",
+    "metadata": {
+        "totalPages": 0,
+        "totalCount": 0,
+        "currentPageNo": 1
+    }
+}
+
+// 'Get Receipt Submission' response (success)
+{
+    "submissionUuid": "26ZRE87W22TF81HXGC1ZK6TK10",
+    "sellerId": "776878123",
+    "dateTimeReceived": "2026-06-03T11:30:10.959894Z",
+    "submitterName": "MyERP",
+    "submissionChannel": "ERP",
+    "receiptsCount": 1,
+    "invalidReceiptsCount": 0,
+    "status": "Valid",
+    "receipts": [
+        {
+            "uuid": "e1c575600a7e737c058fae80bdf3ecd65bd4b7cb2a1d896fa8616e6875d70ed6",
+            "receiptNumber": "R12345",
+            "dateTimeIssued": "2026-06-03T00:01:00Z",
+            "dateTimeReceived": "2026-06-03T11:30:10.959894Z",
+            "documentType": "S",
+            "documentTypeNamePrimaryLang": "Sales Receipt",
+            "documentTypeNameSecondaryLang": "إيصال بيع",
+            "currency": "EGP",
+            "currencyNamePrimaryLang": "egyptian pound",
+            "currencyNameSecondaryLang": "ج.م",
+            "documentTypeVersion": "1.2",
+            "totalAmount": 114.0,
+            "exchangeRate": 0.0,
+            "sellerID": "776878123",
+            "sellerName": "محمد عبدالباسط عبدالرحمن عبدالرحيم",
+            "buyerId": "",
+            "buyerName": "",
+            "buyerType": "P",
+            "status": "Valid",
+            "longId": "8G1HRMNQZZ1D4687GC1ZK6TK10xsSZZr1780486210",
+            "hasReturnReceipts": false
+        }
+    ],
+    "metadata": {
+        "totalPages": 1,
+        "totalCount": 1,
+        "currentPageNo": 1
+    }
+}
+
+// 'Get Receipt Submission' response for batch (fail)
+{
+    "submissionUuid": "27HKBN3S8GYKT4BF64F0N6TK10",
+    "sellerId": "776878123",
+    "dateTimeReceived": "2026-06-03T11:48:26.3741137Z",
+    "submitterName": "MyERP",
+    "submissionChannel": "ERP",
+    "receiptsCount": 3,
+    "invalidReceiptsCount": 1,
+    "status": "Invalid",
+    "receipts": [
+        {
+            "uuid": "036a42870a71d21d34c040425802287264354a315ce580cd5727bc4fca2849c3",
+            "receiptNumber": "2",
+            "dateTimeIssued": "2026-06-03T10:01:00Z",
+            "dateTimeReceived": "2026-06-03T11:48:26.3741137Z",
+            "documentType": "S",
+            "documentTypeNamePrimaryLang": "Sales Receipt",
+            "documentTypeNameSecondaryLang": "إيصال بيع",
+            "currency": "EGP",
+            "currencyNamePrimaryLang": "egyptian pound",
+            "currencyNameSecondaryLang": "ج.م",
+            "documentTypeVersion": "1.2",
+            "totalAmount": 114.0,
+            "exchangeRate": 0.0,
+            "sellerID": "776878123",
+            "sellerName": "محمد عبدالباسط عبدالرحمن عبدالرحيم",
+            "buyerId": "",
+            "buyerName": "",
+            "buyerType": "P",
+            "status": "Invalid",
+            "longId": "CQHZ2ERXHTWF2QRE64F0N6TK109MUvYI1780487306",
+            "hasReturnReceipts": false,
+            "errors": [
+                {
+                    "stepId": "17",
+                    "stepName": "Step 01",
+                    "stepNameAr": "خطوة 01",
+                    "error": {
+                        "errorCode": "CF",
+                        "error": "Invalid Core field",
+                        "errorAr": "البيانات الأساسية غير صحيحة",
+                        "innerError": [
+                            {
+                                "propertyPath": "receipt/seller/deviceSerialNumber",
+                                "errorCode": "CF319",
+                                "error": "Device is Pending while receipt submission",
+                                "errorAr": "جهاز نقطة البيع قيد الانتظار اثناء ارسال الايصال"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    "metadata": {
+        "totalPages": 1,
+        "totalCount": 1,
+        "currentPageNo": 1
+    }
+}
