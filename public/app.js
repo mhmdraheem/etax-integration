@@ -119,7 +119,9 @@ const productMap = {
 
 const els = {
   csvFile: document.getElementById("csvFile"),
-  processBtn: document.getElementById("processBtn"),
+  envToggle: document.getElementById("envToggle"),
+  envPreprodLabel: document.getElementById("envPreprodLabel"),
+  envProdLabel: document.getElementById("envProdLabel"),
   fileName: document.getElementById("fileName"),
   includeOrders: document.getElementById("includeOrders"),
   includeReturns: document.getElementById("includeReturns"),
@@ -149,6 +151,7 @@ let zipBlob = null;
 let selectedIndex = -1;
 let expanded = new Set();
 let currentBatchId = null;
+let currentEnv = "preprod";
 
 class SourceJsonParser {
   constructor(source) {
@@ -785,17 +788,8 @@ function downloadBlob(blob, fileName) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function processCsv() {
-  try {
-    csvRows = csvRows.length ? csvRows : parseCsv(csvText);
-    await rebuildSelectedOutputs(true);
-  } catch (error) {
-    renderProcessingError(error);
-  }
-}
-
-async function rebuildSelectedOutputs(saveToApi) {
-  els.statusText.textContent = saveToApi ? "Processing CSV..." : "Updating selected rows...";
+async function rebuildSelectedOutputs() {
+  els.statusText.textContent = "Processing CSV...";
   if (!csvRows.length) throw new Error("The CSV file has no data rows.");
   const selectedRows = csvRows.filter(shouldIncludeRow);
   if (!selectedRows.length) throw new Error("Select Orders, Returns, or both before processing.");
@@ -816,11 +810,8 @@ async function rebuildSelectedOutputs(saveToApi) {
     els.statusText.textContent = "ZIP is larger than 25 MB. Reduce the CSV size and process again.";
   } else if (hasAlerts) {
     els.statusText.textContent = `Showing ${processed.length} selected receipt(s), but ZIP download is disabled until alerts are fixed.`;
-  } else if (saveToApi) {
-    await saveBatch();
-    els.statusText.textContent = `Processed ${processed.length} selected receipt(s) into ${submissionFiles.length} JSON file(s).`;
   } else {
-    els.statusText.textContent = `Showing ${processed.length} selected receipt(s). Click Process to save them to the database.`;
+    els.statusText.textContent = `${processed.length} receipt(s) ready in ${submissionFiles.length} JSON file(s). Click "Send to SDK" to submit.`;
   }
 }
 
@@ -843,40 +834,50 @@ els.csvFile.addEventListener("change", async () => {
   if (!file) return;
   csvText = await file.text();
   els.fileName.textContent = file.name;
-  els.processBtn.disabled = false;
   csvRows = parseCsv(csvText);
   try {
-    await rebuildSelectedOutputs(false);
+    await rebuildSelectedOutputs();
   } catch (error) {
     renderProcessingError(error);
   }
 });
 
-els.processBtn.addEventListener("click", processCsv);
 els.includeOrders.addEventListener("change", async () => {
-  els.processBtn.disabled = !csvText;
   if (!csvRows.length) {
     els.statusText.textContent = "Ready.";
     return;
   }
   try {
-    await rebuildSelectedOutputs(false);
+    await rebuildSelectedOutputs();
   } catch (error) {
     renderProcessingError(error);
   }
 });
 els.includeReturns.addEventListener("change", async () => {
-  els.processBtn.disabled = !csvText;
   if (!csvRows.length) {
     els.statusText.textContent = "Ready.";
     return;
   }
   try {
-    await rebuildSelectedOutputs(false);
+    await rebuildSelectedOutputs();
   } catch (error) {
     renderProcessingError(error);
   }
 });
+
+els.envToggle.addEventListener("change", () => {
+  currentEnv = els.envToggle.checked ? "prod" : "preprod";
+  updateEnvDisplay();
+});
+
+function updateEnvDisplay() {
+  const isProd = currentEnv === "prod";
+  els.envPreprodLabel.classList.toggle("env-active", !isProd);
+  els.envPreprodLabel.classList.remove("env-prod-active");
+  els.envProdLabel.classList.toggle("env-active", isProd);
+  els.envProdLabel.classList.toggle("env-prod-active", isProd);
+}
+updateEnvDisplay();
 els.viewFiles.addEventListener("click", renderFilesPreview);
 els.downloadZip.addEventListener("click", () => {
   if (zipBlob) downloadBlob(zipBlob, `noon-eta-submissions-${new Date().toISOString().slice(0, 10)}.zip`);
@@ -906,24 +907,35 @@ els.ordersBody.addEventListener("click", (event) => {
 });
 
 async function submitToSdk() {
+  if (currentEnv === "prod") {
+    const confirmed = confirm(
+      "WARNING: You are about to submit to the PRODUCTION (live) ETA environment.\n\n" +
+      "Receipts submitted to production are recorded with the Egyptian Tax Authority and cannot be undone.\n\n" +
+      "Proceed with production submission?"
+    );
+    if (!confirmed) return;
+  }
   try {
     els.sdkModal.hidden = false;
     els.sdkSpinner.hidden = false;
-    els.sdkSummary.textContent = "";
+    els.sdkSummary.textContent = `Submitting to ${currentEnv === "prod" ? "PRODUCTION" : "pre-production"}...`;
     els.sdkResponse.textContent = "";
     els.sendSdk.disabled = true;
-    els.statusText.textContent = "Saving batch and sending to SDK...";
+    els.statusText.textContent = "Saving batch and sending to ETA...";
     if (!currentBatchId) {
       await saveBatch();
     }
-    const result = await apiRequest(`/batches/${currentBatchId}/submit`, { method: "POST" });
+    const result = await apiRequest(`/batches/${currentBatchId}/submit`, {
+      method: "POST",
+      body: JSON.stringify({ env: currentEnv })
+    });
     els.sdkSummary.textContent = result.summary || `Batch status: ${result.status || "unknown"}`;
     els.sdkResponse.textContent = JSON.stringify(result.response || result, null, 2);
-    els.statusText.textContent = `SDK submission finished: ${result.status || "unknown"}.`;
+    els.statusText.textContent = `ETA submission finished (${currentEnv}): ${result.status || "unknown"}.`;
   } catch (error) {
-    els.sdkSummary.textContent = "SDK submission failed.";
+    els.sdkSummary.textContent = "ETA submission failed.";
     els.sdkResponse.textContent = String(error.message || error);
-    els.statusText.textContent = "SDK submission failed.";
+    els.statusText.textContent = "ETA submission failed.";
   } finally {
     els.sdkSpinner.hidden = true;
     updateButtons();

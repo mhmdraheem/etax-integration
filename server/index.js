@@ -8,22 +8,30 @@ loadEnvFile(path.join(__dirname, "..", ".env"));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const publicDir = path.join(__dirname, "..", "public");
+const importDir = path.join(__dirname, "..", "import");
+const logsDir = path.join(__dirname, "..", "logs");
 const databaseName = process.env.DB_NAME || "receipts_system";
 let pool;
-const sdkConfig = {
-  authUrl: process.env.SDK_AUTH_URL || "",
-  submitReceiptsUrl: process.env.SDK_SUBMIT_RECEIPTS_URL || "",
-  submitReturnReceiptsUrl: process.env.SDK_SUBMIT_RETURN_RECEIPTS_URL || "",
-  getSubmissionUrl: process.env.SDK_GET_SUBMISSION_URL || "",
-  clientId: process.env.SDK_CLIENT_ID || "",
-  clientSecret: process.env.SDK_CLIENT_SECRET || "",
-  username: process.env.SDK_USERNAME || "",
-  password: process.env.SDK_PASSWORD || "",
-  authBody: process.env.SDK_AUTH_BODY || "",
-  authTokenPath: process.env.SDK_AUTH_TOKEN_PATH || "access_token",
-  pollIntervalMs: Number(process.env.SDK_POLL_INTERVAL_MS || 3000),
-  pollMaxAttempts: Number(process.env.SDK_POLL_MAX_ATTEMPTS || 30)
+
+const envConfigs = {
+  preprod: {
+    idUrl: process.env.PREPROD_ID_URL || "https://id.preprod.eta.gov.eg",
+    apiUrl: process.env.PREPROD_API_URL || "https://api.preprod.eta.gov.eg",
+    clientId: process.env.PREPROD_CLIENT_ID || "",
+    clientSecret: process.env.PREPROD_CLIENT_SECRET || "",
+    deviceSerial: process.env.PREPROD_DEVICE_SERIAL || ""
+  },
+  prod: {
+    idUrl: process.env.PROD_ID_URL || "https://id.eta.gov.eg",
+    apiUrl: process.env.PROD_API_URL || "https://api.eta.gov.eg",
+    clientId: process.env.PROD_CLIENT_ID || "",
+    clientSecret: process.env.PROD_CLIENT_SECRET || "",
+    deviceSerial: process.env.PROD_DEVICE_SERIAL || ""
+  }
 };
+
+const pollIntervalMs = Number(process.env.SDK_POLL_INTERVAL_MS || 3000);
+const pollMaxAttempts = Number(process.env.SDK_POLL_MAX_ATTEMPTS || 30);
 
 const dbConfig = {
   host: process.env.DB_HOST || "127.0.0.1",
@@ -36,8 +44,59 @@ const dbConfig = {
   namedPlaceholders: true
 };
 
+// ─── Logger ──────────────────────────────────────────────────────────────────
+
+function ensureLogsDir() {
+  try {
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+  } catch (_) { /* ignore */ }
+}
+
+function writeLog(level, event, data = {}) {
+  const ts = new Date().toISOString();
+  const entry = { ts, level, event, ...data };
+
+  // Human-readable console
+  const prefix = `[${ts}] ${level.toUpperCase().padEnd(5)} ${event}`;
+  const extras = Object.keys(data).length ? data : "";
+  if (level === "error") console.error(prefix, extras);
+  else if (level === "warn") console.warn(prefix, extras);
+  else console.log(prefix, extras);
+
+  // Daily rolling file: logs/YYYY-MM-DD.log (NDJSON)
+  const date = ts.slice(0, 10);
+  try {
+    ensureLogsDir();
+    fs.appendFileSync(path.join(logsDir, `${date}.log`), JSON.stringify(entry) + "\n", "utf8");
+  } catch (e) {
+    console.error("[logger] write failed:", e.message);
+  }
+}
+
+const log = {
+  info:  (event, data = {}) => writeLog("info",  event, data),
+  warn:  (event, data = {}) => writeLog("warn",  event, data),
+  error: (event, data = {}) => writeLog("error", event, data)
+};
+
+// ─── Express setup ────────────────────────────────────────────────────────────
+
 app.use(express.json({ limit: "30mb" }));
 app.use(express.static(publicDir));
+
+// Log every inbound HTTP request + its final status code
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const data = { method: req.method, path: req.path, status: res.statusCode, ms: Date.now() - start };
+    if (req.body?.env) data.env = req.body.env;
+    if (req.body?.batchNumber) data.batchNumber = req.body.batchNumber;
+    log.info("http.request", data);
+  });
+  next();
+});
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -60,6 +119,7 @@ function quoteIdentifier(identifier) {
 }
 
 async function initializeDatabase() {
+  log.info("db.init.start", { host: dbConfig.host, database: databaseName });
   try {
     const setupConnection = await mysql.createConnection({
       host: dbConfig.host,
@@ -72,9 +132,9 @@ async function initializeDatabase() {
       `CREATE DATABASE IF NOT EXISTS ${quoteIdentifier(databaseName)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
     );
     await setupConnection.end();
+    log.info("db.init.database_ready", { database: databaseName });
   } catch (error) {
-    console.warn(`Could not create database ${databaseName}. Continuing with configured database connection.`);
-    console.warn(error.message);
+    log.warn("db.init.create_db_failed", { message: error.message });
   }
 
   pool = mysql.createPool(dbConfig);
@@ -88,7 +148,7 @@ async function ensureSchema() {
       created_at DATETIME NOT NULL,
       receipt_count INT UNSIGNED NOT NULL DEFAULT 0,
       submissionID VARCHAR(128) NULL,
-      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      status VARCHAR(32) NOT NULL,
       response JSON NULL,
       request_json JSON NOT NULL,
       inserted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -122,10 +182,12 @@ async function ensureSchema() {
   `);
 
   await addColumnIfMissing("batches", "submissionID", "VARCHAR(128) NULL");
-  await addColumnIfMissing("batches", "status", "VARCHAR(32) NOT NULL DEFAULT 'pending'");
+  await addColumnIfMissing("batches", "status", "VARCHAR(32) NOT NULL");
   await addColumnIfMissing("batches", "response", "JSON NULL");
   await addColumnIfMissing("receipts", "status", "VARCHAR(32) NOT NULL DEFAULT 'valid'");
   await addColumnIfMissing("receipts", "submitted", "BOOLEAN NOT NULL DEFAULT FALSE");
+
+  log.info("db.schema_ready");
 }
 
 async function addColumnIfMissing(tableName, columnName, definition) {
@@ -156,160 +218,203 @@ function parseJsonValue(value) {
   return JSON.parse(value);
 }
 
-function getPathValue(object, pathExpression) {
-  return String(pathExpression || "")
-    .split(".")
-    .filter(Boolean)
-    .reduce((value, key) => (value && value[key] !== undefined ? value[key] : undefined), object);
-}
-
-function requireSdkConfig() {
-  const missing = [];
-  if (!sdkConfig.authUrl) missing.push("SDK_AUTH_URL");
-  if (!sdkConfig.submitReceiptsUrl) missing.push("SDK_SUBMIT_RECEIPTS_URL");
-  if (!sdkConfig.submitReturnReceiptsUrl) missing.push("SDK_SUBMIT_RETURN_RECEIPTS_URL");
-  if (!sdkConfig.getSubmissionUrl) missing.push("SDK_GET_SUBMISSION_URL");
-  if (missing.length) {
-    throw new Error(`Missing SDK configuration: ${missing.join(", ")}`);
+function getEnvConfig(env) {
+  const cfg = envConfigs[env];
+  if (!cfg) throw new Error(`Unknown environment: "${env}". Use "preprod" or "prod".`);
+  if (!cfg.clientId || !cfg.clientSecret) {
+    throw new Error(`Environment "${env}" is not configured — missing client credentials in .env`);
   }
+  return cfg;
 }
 
-function buildAuthBody() {
-  if (sdkConfig.authBody) return JSON.parse(sdkConfig.authBody);
-  return {
-    clientId: sdkConfig.clientId,
-    clientSecret: sdkConfig.clientSecret,
-    username: sdkConfig.username,
-    password: sdkConfig.password
-  };
-}
+// ─── ETA API calls ────────────────────────────────────────────────────────────
 
 async function sdkRequest(url, options = {}) {
+  const method = options.method || "GET";
+  const isAuth = url.includes("/connect/token");
+
+  // Log request — never log auth body (contains client_secret)
+  log.info("eta.request", {
+    method,
+    url,
+    ...(isAuth ? {} : { receiptCount: tryCountReceipts(options.body) })
+  });
+
   const response = await fetch(url, options);
   const text = await response.text();
   let body = null;
   if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = { raw: text };
-    }
+    try { body = JSON.parse(text); } catch { body = { raw: text }; }
   }
+
+  // Log response — for auth just confirm token presence, never log the token value
+  if (isAuth) {
+    log.info("eta.response", {
+      method, url,
+      statusCode: response.status,
+      ok: response.ok,
+      tokenReceived: !!(body && body.access_token)
+    });
+  } else {
+    log.info("eta.response", {
+      method, url,
+      statusCode: response.status,
+      ok: response.ok,
+      body
+    });
+  }
+
   if (!response.ok) {
     const message = body && (body.message || body.error) ? body.message || body.error : text;
-    throw new Error(message || `SDK request failed with ${response.status}`);
+    const err = new Error(message || `SDK request failed with ${response.status}`);
+    log.error("eta.request_failed", { method, url, statusCode: response.status, message: err.message });
+    throw err;
   }
   return body || {};
 }
 
-async function authenticateSdk() {
-  const authResponse = await sdkRequest(sdkConfig.authUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildAuthBody())
-  });
-  const token = getPathValue(authResponse, sdkConfig.authTokenPath);
-  if (!token) throw new Error(`SDK auth token not found at ${sdkConfig.authTokenPath}`);
-  return { token, authResponse };
+function tryCountReceipts(bodyStr) {
+  try {
+    const parsed = typeof bodyStr === "string" ? JSON.parse(bodyStr) : bodyStr;
+    return Array.isArray(parsed?.receipts) ? parsed.receipts.length : undefined;
+  } catch { return undefined; }
 }
 
-function submissionStatusUrl(submissionId) {
-  return sdkConfig.getSubmissionUrl.replaceAll("{submissionId}", encodeURIComponent(submissionId));
+async function authenticateEnv(cfg) {
+  log.info("eta.auth.start", { idUrl: cfg.idUrl });
+  const params = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret
+  });
+  const response = await sdkRequest(`${cfg.idUrl}/connect/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString()
+  });
+  const token = response.access_token;
+  if (!token) throw new Error("Auth token not found in response");
+  log.info("eta.auth.success", { idUrl: cfg.idUrl });
+  return token;
+}
+
+function buildStatusUrl(cfg, submissionId) {
+  return `${cfg.apiUrl}/api/v1/receiptsubmissions/${encodeURIComponent(submissionId)}/details?PageNo=1&PageSize=100`;
 }
 
 function extractSubmissionId(response) {
-  return response.submissionId;
+  return response.submissionId || "";
+}
+
+// Called on the 'Get Receipt Submission' poll response.
+// status is "Valid", "Invalid", or "InProgress".
+function isPendingStatus(response) {
+  return String(response.status || "").toLowerCase() === "inprogress";
 }
 
 function extractBatchStatus(response) {
   if (Number(response.invalidReceiptsCount || 0) > 0) return "invalid";
-  const raw = response.status || response.submissionStatus || response.overallStatus || response.validationStatus || "";
-  const normalized = String(raw).toLowerCase();
-  if (["valid", "accepted", "submitted", "completed", "success", "received"].includes(normalized)) return "valid";
-  if (["invalid", "rejected", "failed", "error"].includes(normalized)) return "invalid";
-  if (["pending", "inprogress", "in_progress", "processing"].includes(normalized)) return "pending";
-  return normalized || "pending";
+  const normalized = String(response.status || "").toLowerCase();
+  return normalized === "invalid" ? "invalid" : "valid";
 }
 
-function isPendingStatus(response) {
-  return extractBatchStatus(response) === "pending";
-}
-
-function collectReceiptResultItems(response) {
-  const candidates = [
-    response.receipts,
-    response.receiptResults,
-    response.documents,
-    response.acceptedDocuments,
-    response.rejectedDocuments,
-    response.invalidReceipts,
-    response.validReceipts
-  ];
-  return candidates.flatMap((items) => (Array.isArray(items) ? items : []));
-}
-
-function receiptResultKey(item) {
-  return item.uuid || item.receiptUUID || item.receiptUuid || item.receiptNumber || item.internalId || item.id || "";
-}
-
-function receiptResultStatus(item, fallback) {
-  const raw = item.status || item.validationStatus || item.state || fallback || "";
-  const normalized = String(raw).toLowerCase();
-  if (["valid", "accepted", "submitted", "completed", "success", "received"].includes(normalized)) return "valid";
-  if (["invalid", "rejected", "failed", "error"].includes(normalized)) return "invalid";
-  return normalized || fallback || "valid";
-}
-
+// Builds a uuid → "valid"|"invalid" map from an ETA response.
+// Works with both the submit response (acceptedDocuments/rejectedDocuments)
+// and the poll response (receipts[] each with status "Valid"/"Invalid").
 function buildReceiptStatusMap(response) {
   const map = new Map();
-  for (const item of collectReceiptResultItems(response)) {
-    const key = receiptResultKey(item);
-    if (key) map.set(key, receiptResultStatus(item));
+  // 'Get Receipt Submission' final response: receipts[] with uuid + status
+  if (Array.isArray(response.receipts)) {
+    for (const item of response.receipts) {
+      if (item.uuid) {
+        map.set(item.uuid, String(item.status || "").toLowerCase() === "invalid" ? "invalid" : "valid");
+      }
+    }
+  }
+  // Submit response: acceptedDocuments → valid, rejectedDocuments → invalid
+  if (Array.isArray(response.acceptedDocuments)) {
+    for (const item of response.acceptedDocuments) {
+      if (item.uuid) map.set(item.uuid, "valid");
+    }
   }
   if (Array.isArray(response.rejectedDocuments)) {
     for (const item of response.rejectedDocuments) {
-      const key = receiptResultKey(item);
-      if (key) map.set(key, "invalid");
-    }
-  }
-  if (Array.isArray(response.invalidReceipts)) {
-    for (const item of response.invalidReceipts) {
-      const key = receiptResultKey(item);
-      if (key) map.set(key, "invalid");
+      if (item.uuid) map.set(item.uuid, "invalid");
     }
   }
   return map;
 }
 
-async function submitReceiptSet(url, receipts, token) {
+function patchDeviceSerial(receipt, deviceSerial) {
+  if (!deviceSerial) return receipt;
+  const patched = JSON.parse(JSON.stringify(receipt));
+  if (patched.seller) patched.seller.deviceSerialNumber = deviceSerial;
+  return patched;
+}
+
+async function submitReceiptSet(cfg, receipts, token, type) {
+  const url = `${cfg.apiUrl}/api/v1/receiptsubmissions`;
+  const patched = receipts.map((r) => patchDeviceSerial(r, cfg.deviceSerial));
+
+  log.info("eta.submit.start", { type, receiptCount: patched.length, url });
   const submitResponse = await sdkRequest(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({ receipts })
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ receipts: patched })
   });
+
   const submissionId = extractSubmissionId(submitResponse);
-  if (!submissionId) throw new Error("SDK submission response did not include a submissionID");
-  const finalResponse = await pollSubmission(submissionId, token);
+  if (!submissionId) throw new Error("SDK submission response did not include a submissionId");
+
+  log.info("eta.submit.accepted", {
+    type,
+    submissionId,
+    acceptedCount: submitResponse.acceptedDocuments?.length ?? 0,
+    rejectedCount: submitResponse.rejectedDocuments?.length ?? 0
+  });
+
+  const finalResponse = await pollSubmission(cfg, submissionId, token, type);
   return { submissionId, submitResponse, finalResponse };
 }
 
-async function pollSubmission(submissionId, token) {
+async function pollSubmission(cfg, submissionId, token, type) {
+  log.info("eta.poll.start", { type, submissionId, maxAttempts: pollMaxAttempts });
   let latest = null;
-  for (let attempt = 0; attempt < sdkConfig.pollMaxAttempts; attempt += 1) {
-    if (attempt > 0) {
-      await new Promise((resolve) => setTimeout(resolve, sdkConfig.pollIntervalMs));
+
+  for (let attempt = 1; attempt <= pollMaxAttempts; attempt += 1) {
+    if (attempt > 1) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
-    latest = await sdkRequest(submissionStatusUrl(submissionId), {
+
+    latest = await sdkRequest(buildStatusUrl(cfg, submissionId), {
       method: "GET",
       headers: { Authorization: `Bearer ${token}` }
     });
-    if (!isPendingStatus(latest)) return latest;
+
+    const status = String(latest.status || "").toLowerCase();
+    log.info("eta.poll.attempt", {
+      type, submissionId, attempt,
+      status: latest.status,
+      receiptsCount: latest.receiptsCount,
+      invalidReceiptsCount: latest.invalidReceiptsCount
+    });
+
+    if (!isPendingStatus(latest)) {
+      log.info("eta.poll.done", {
+        type, submissionId, attempt,
+        finalStatus: latest.status,
+        receiptsCount: latest.receiptsCount,
+        invalidReceiptsCount: latest.invalidReceiptsCount
+      });
+      return latest;
+    }
   }
-  return latest || { status: "pending" };
+
+  log.warn("eta.poll.max_attempts_reached", { type, submissionId, pollMaxAttempts });
+  return latest;
 }
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.get("/api/health", async (_req, res, next) => {
   try {
@@ -320,9 +425,26 @@ app.get("/api/health", async (_req, res, next) => {
   }
 });
 
+app.get("/api/config", (_req, res) => {
+  res.json({
+    environments: {
+      preprod: {
+        configured: !!(envConfigs.preprod.clientId && envConfigs.preprod.clientSecret),
+        deviceSerial: envConfigs.preprod.deviceSerial
+      },
+      prod: {
+        configured: !!(envConfigs.prod.clientId && envConfigs.prod.clientSecret),
+        deviceSerial: envConfigs.prod.deviceSerial
+      }
+    }
+  });
+});
+
 app.get("/api/history", async (_req, res, next) => {
   try {
-    const [lastRows] = await pool.query("SELECT uuid FROM receipts ORDER BY id DESC LIMIT 1");
+    const [lastRows] = await pool.query(
+      "SELECT uuid FROM receipts WHERE status = 'valid' AND submitted = 1 ORDER BY id DESC LIMIT 1"
+    );
     const [orderRows] = await pool.query(`
       SELECT receipt_number, source_doc, uuid
       FROM receipts
@@ -336,10 +458,9 @@ app.get("/api/history", async (_req, res, next) => {
       if (row.source_doc) receiptIndex[row.source_doc] = row.uuid;
     }
 
-    res.json({
-      lastUUID: lastRows[0] ? lastRows[0].uuid : "",
-      receiptIndex
-    });
+    const lastUUID = lastRows[0] ? lastRows[0].uuid : "";
+    log.info("history.fetched", { lastUUID: lastUUID || "(none)", indexSize: Object.keys(receiptIndex).length });
+    res.json({ lastUUID, receiptIndex });
   } catch (error) {
     next(error);
   }
@@ -351,6 +472,8 @@ app.post("/api/batches", async (req, res, next) => {
     res.status(400).json({ error: "Invalid batch payload" });
     return;
   }
+
+  log.info("batch.save.start", { batchNumber: batch.batchNumber, receiptCount: batch.receipts.length });
 
   const connection = await pool.getConnection();
   try {
@@ -373,26 +496,12 @@ app.post("/api/batches", async (req, res, next) => {
       await connection.execute(
         `
           INSERT INTO receipts (
-            batch_id,
-            receipt_number,
-            document_type,
-            source_invoice,
-            source_doc,
-            uuid,
-            status,
-            submitted,
-            request_json
+            batch_id, receipt_number, document_type, source_invoice, source_doc,
+            uuid, status, submitted, request_json
           )
           VALUES (
-            :batchId,
-            :receiptNumber,
-            :documentType,
-            :sourceInvoice,
-            :sourceDoc,
-            :uuid,
-            :status,
-            :submitted,
-            :requestJson
+            :batchId, :receiptNumber, :documentType, :sourceInvoice, :sourceDoc,
+            :uuid, :status, :submitted, :requestJson
           )
         `,
         {
@@ -410,6 +519,7 @@ app.post("/api/batches", async (req, res, next) => {
     }
 
     await connection.commit();
+    log.info("batch.save.done", { batchId: batchResult.insertId, batchNumber: batch.batchNumber, receiptCount: batch.receipts.length });
     res.status(201).json({ ok: true, batchId: batchResult.insertId });
   } catch (error) {
     await connection.rollback();
@@ -426,8 +536,12 @@ app.post("/api/batches/:batchId/submit", async (req, res, next) => {
     return;
   }
 
+  const env = req.body.env || "preprod";
+  log.info("submission.start", { batchId, env });
+
   try {
-    requireSdkConfig();
+    const cfg = getEnvConfig(env);
+
     const [batchRows] = await pool.execute("SELECT * FROM batches WHERE id = :batchId", { batchId });
     if (!batchRows.length) {
       res.status(404).json({ error: "Batch not found" });
@@ -443,6 +557,13 @@ app.post("/api/batches/:batchId/submit", async (req, res, next) => {
       return;
     }
 
+    log.info("submission.receipts_loaded", {
+      batchId,
+      total: receiptRows.length,
+      orders: receiptRows.filter((r) => r.document_type === "Order").length,
+      returns: receiptRows.filter((r) => r.document_type === "Return").length
+    });
+
     const orderReceipts = receiptRows
       .filter((row) => row.document_type === "Order")
       .map((row) => parseJsonValue(row.request_json));
@@ -450,36 +571,30 @@ app.post("/api/batches/:batchId/submit", async (req, res, next) => {
       .filter((row) => row.document_type === "Return")
       .map((row) => parseJsonValue(row.request_json));
 
-    const { token } = await authenticateSdk();
+    const token = await authenticateEnv(cfg);
     const submissions = [];
+
     if (orderReceipts.length) {
-      submissions.push({
-        type: "Order",
-        ...(await submitReceiptSet(sdkConfig.submitReceiptsUrl, orderReceipts, token))
-      });
+      submissions.push({ type: "Order", ...(await submitReceiptSet(cfg, orderReceipts, token, "Order")) });
     }
     if (returnReceipts.length) {
-      submissions.push({
-        type: "Return",
-        ...(await submitReceiptSet(sdkConfig.submitReturnReceiptsUrl, returnReceipts, token))
-      });
+      submissions.push({ type: "Return", ...(await submitReceiptSet(cfg, returnReceipts, token, "Return")) });
     }
 
-    const responsePayload = { submissions };
-    const submissionID = submissions.map((submission) => submission.submissionId).filter(Boolean).join(",");
-    const finalStatuses = submissions.map((submission) => extractBatchStatus(submission.finalResponse));
-    const batchStatus = finalStatuses.some((status) => status === "invalid") ? "invalid" : finalStatuses.every((status) => status === "valid") ? "valid" : "pending";
+    const responsePayload = { env, submissions };
+    const submissionID = submissions.map((s) => s.submissionId).filter(Boolean).join(",");
+    const finalStatuses = submissions.map((s) => extractBatchStatus(s.finalResponse));
+    const batchStatus = finalStatuses.some((s) => s === "invalid") ? "invalid" : "valid";
 
+    log.info("submission.finalizing", { batchId, env, submissionID, batchStatus });
     await updateSubmissionResults(batchId, receiptRows, submissions, submissionID, batchStatus, responsePayload);
-    res.json({
-      ok: true,
-      batchId,
-      submissionID,
-      status: batchStatus,
-      summary: buildSubmissionSummary(receiptRows.length, submissions, batchStatus),
-      response: responsePayload
-    });
+
+    const summary = buildSubmissionSummary(receiptRows.length, submissions, batchStatus);
+    log.info("submission.done", { batchId, env, submissionID, batchStatus, summary });
+
+    res.json({ ok: true, batchId, env, submissionID, status: batchStatus, summary, response: responsePayload });
   } catch (error) {
+    log.error("submission.error", { batchId, env, message: error.message });
     next(error);
   }
 });
@@ -491,29 +606,32 @@ async function updateSubmissionResults(batchId, receiptRows, submissions, submis
     for (const [key, value] of partial.entries()) statusMap.set(key, value);
   }
 
-  const rejectedBatch = batchStatus === "invalid";
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+    let validCount = 0;
+    let invalidCount = 0;
+
     for (const receipt of receiptRows) {
       const request = parseJsonValue(receipt.request_json);
       const receiptNumber = request.header && request.header.receiptNumber;
       const uuid = request.header && request.header.uuid;
-      const status = statusMap.get(uuid) || statusMap.get(receiptNumber) || (rejectedBatch ? "valid" : batchStatus === "valid" ? "valid" : "pending");
-      const submitted = batchStatus === "valid" && status === "valid" ? 1 : 0;
+      // Fall back to batch-level status if receipt isn't individually listed
+      const status = statusMap.get(uuid) || statusMap.get(receiptNumber) || batchStatus;
+      // Submitted = ETA accepted this specific receipt, regardless of other receipts in batch
+      const submitted = status === "valid" ? 1 : 0;
+      if (submitted) validCount++; else invalidCount++;
       await connection.execute(
         "UPDATE receipts SET status = :status, submitted = :submitted WHERE id = :id",
         { status, submitted, id: receipt.id }
       );
     }
+
+    log.info("submission.receipts_updated", { batchId, validCount, invalidCount });
+
     await connection.execute(
       "UPDATE batches SET submissionID = :submissionID, status = :status, response = :response WHERE id = :batchId",
-      {
-        submissionID,
-        status: batchStatus,
-        response: JSON.stringify(responsePayload),
-        batchId
-      }
+      { submissionID, status: batchStatus, response: JSON.stringify(responsePayload), batchId }
     );
     await connection.commit();
   } catch (error) {
@@ -525,13 +643,16 @@ async function updateSubmissionResults(batchId, receiptRows, submissions, submis
 }
 
 function buildSubmissionSummary(receiptCount, submissions, batchStatus) {
-  const submissionText = submissions.map((submission) => `${submission.type}: ${submission.submissionId} (${extractBatchStatus(submission.finalResponse)})`).join("; ");
-  return `Batch status: ${batchStatus}. Receipts checked: ${receiptCount}. ${submissionText}`;
+  const submissionText = submissions
+    .map((s) => `${s.type}: ${s.submissionId} (${extractBatchStatus(s.finalResponse)})`)
+    .join("; ");
+  return `Batch status: ${batchStatus}. Receipts: ${receiptCount}. ${submissionText}`;
 }
 
 app.delete("/api/history", async (_req, res, next) => {
   try {
     await pool.query("DELETE FROM batches");
+    log.warn("history.cleared");
     res.status(204).end();
   } catch (error) {
     next(error);
@@ -543,19 +664,102 @@ app.get("*", (_req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
-  console.error(error);
+  log.error("unhandled_error", { message: error.message, stack: error.stack });
   res.status(500).json({ error: error.message || "Server error" });
 });
 
+// ─── Startup import ───────────────────────────────────────────────────────────
+
+async function importMobileReceipts() {
+  if (!fs.existsSync(importDir)) return;
+  const files = fs.readdirSync(importDir).filter((f) => f.endsWith(".json"));
+  if (!files.length) return;
+
+  const batchNumber = "mobile-import-2026-05-30";
+  const [existing] = await pool.execute(
+    "SELECT id FROM batches WHERE batch_number = :batchNumber",
+    { batchNumber }
+  );
+  if (existing.length) {
+    log.info("import.mobile.already_done", { batchNumber });
+    return;
+  }
+
+  log.info("import.mobile.start", { files: files.length });
+  const receipts = [];
+  let submissionUuid = null;
+  let batchDate = null;
+
+  for (const file of files) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(importDir, file), "utf8"));
+      const uuid = path.basename(file, ".json");
+      const rawDoc = typeof data.rawDocument === "string" ? JSON.parse(data.rawDocument) : data.rawDocument;
+      const receiptType = rawDoc?.documentType?.receiptType || data.receipt?.documentType?.receiptType || "S";
+      if (!submissionUuid) submissionUuid = data.submissionUuid || null;
+      if (!batchDate) batchDate = data.dateTimeReceived || null;
+      receipts.push({
+        uuid,
+        receiptNumber: rawDoc?.header?.receiptNumber || "",
+        documentType: receiptType === "R" ? "Return" : "Order",
+        requestJson: rawDoc
+      });
+      log.info("import.mobile.file", { file, uuid, receiptNumber: rawDoc?.header?.receiptNumber });
+    } catch (e) {
+      log.warn("import.mobile.file_skip", { file, reason: e.message });
+    }
+  }
+
+  if (!receipts.length) return;
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [batchResult] = await connection.execute(
+      `INSERT INTO batches (batch_number, created_at, receipt_count, submissionID, status, request_json)
+       VALUES (:batchNumber, :createdAt, :receiptCount, :submissionId, 'valid', :requestJson)`,
+      {
+        batchNumber,
+        createdAt: toMysqlDate(batchDate),
+        receiptCount: receipts.length,
+        submissionId: submissionUuid,
+        requestJson: JSON.stringify({ source: "mobile-app-import" })
+      }
+    );
+    for (const receipt of receipts) {
+      await connection.execute(
+        `INSERT IGNORE INTO receipts (batch_id, receipt_number, document_type, uuid, status, submitted, request_json)
+         VALUES (:batchId, :receiptNumber, :documentType, :uuid, 'valid', 1, :requestJson)`,
+        {
+          batchId: batchResult.insertId,
+          receiptNumber: receipt.receiptNumber,
+          documentType: receipt.documentType,
+          uuid: receipt.uuid,
+          requestJson: JSON.stringify(receipt.requestJson)
+        }
+      );
+    }
+    await connection.commit();
+    log.info("import.mobile.done", { batchNumber, batchId: batchResult.insertId, count: receipts.length, submissionUuid });
+  } catch (error) {
+    await connection.rollback();
+    log.error("import.mobile.failed", { message: error.message });
+  } finally {
+    connection.release();
+  }
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+
 initializeDatabase()
   .then(ensureSchema)
+  .then(importMobileReceipts)
   .then(() => {
     app.listen(port, () => {
-      console.log(`Receipt builder running at http://localhost:${port}`);
+      log.info("server.start", { port, url: `http://localhost:${port}` });
     });
   })
   .catch((error) => {
-    console.error("Failed to initialize database schema");
-    console.error(error);
+    log.error("server.boot_failed", { message: error.message, stack: error.stack });
     process.exit(1);
   });

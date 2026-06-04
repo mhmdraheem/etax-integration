@@ -19,11 +19,18 @@
         <p class="subtitle">Upload invoices and credit notes, review generated ETA receipts, then download submission JSON files in a ZIP archive.</p>
       </div>
       <div class="top-actions">
+        <div class="env-switch" id="envSwitch" title="Switch between Pre-production and Production ETA environment">
+          <span class="env-label" id="envPreprodLabel">Pre-prod</span>
+          <label class="env-toggle-wrap">
+            <input id="envToggle" type="checkbox">
+            <span class="env-slider"></span>
+          </label>
+          <span class="env-label" id="envProdLabel">Prod</span>
+        </div>
         <label class="file-control">
           Upload CSV
           <input id="csvFile" type="file" accept=".csv,text/csv">
         </label>
-        <button id="processBtn" type="button" disabled>Process</button>
       </div>
     </header>
 
