@@ -38,6 +38,9 @@
       <span id="fileName">No CSV selected</span>
       <label><input id="includeOrders" type="checkbox" checked> Orders</label>
       <label><input id="includeReturns" type="checkbox"> Returns</label>
+      <label class="prev-uuid-label">Previous UUID
+        <input id="prevUuidInput" type="text" class="prev-uuid-input" placeholder="Leave empty for the very first batch" spellcheck="false">
+      </label>
     </div>
 
     <section class="layout">
@@ -48,6 +51,7 @@
         <div class="table-wrap">
           <table>
             <colgroup>
+              <col style="width: 30px">
               <col style="width: 38px">
               <col style="width: 19%">
               <col style="width: 16%">
@@ -59,6 +63,7 @@
             </colgroup>
             <thead>
               <tr>
+                <th><input id="selectAll" type="checkbox" checked title="Select / deselect all"></th>
                 <th></th>
                 <th>Number</th>
                 <th>Document</th>

@@ -166,7 +166,7 @@ async function ensureSchema() {
       source_invoice VARCHAR(128) NULL,
       source_doc VARCHAR(128) NULL,
       uuid CHAR(64) NOT NULL,
-      status VARCHAR(32) NOT NULL DEFAULT 'valid',
+      status VARCHAR(32) NOT NULL,
       submitted BOOLEAN NOT NULL DEFAULT FALSE,
       request_json JSON NOT NULL,
       inserted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -184,7 +184,7 @@ async function ensureSchema() {
   await addColumnIfMissing("batches", "submissionID", "VARCHAR(128) NULL");
   await addColumnIfMissing("batches", "status", "VARCHAR(32) NOT NULL");
   await addColumnIfMissing("batches", "response", "JSON NULL");
-  await addColumnIfMissing("receipts", "status", "VARCHAR(32) NOT NULL DEFAULT 'valid'");
+  await addColumnIfMissing("receipts", "status", "VARCHAR(32) NOT NULL");
   await addColumnIfMissing("receipts", "submitted", "BOOLEAN NOT NULL DEFAULT FALSE");
 
   log.info("db.schema_ready");
@@ -233,12 +233,13 @@ async function sdkRequest(url, options = {}) {
   const method = options.method || "GET";
   const isAuth = url.includes("/connect/token");
 
-  // Log request — never log auth body (contains client_secret)
-  log.info("eta.request", {
-    method,
-    url,
-    ...(isAuth ? {} : { receiptCount: tryCountReceipts(options.body) })
-  });
+  // Log full request body for every call except auth (body contains client_secret)
+  if (isAuth) {
+    log.info("eta.request", { method, url });
+  } else {
+    const requestBody = parseBody(options.body);
+    log.info("eta.request", { method, url, body: requestBody });
+  }
 
   const response = await fetch(url, options);
   const text = await response.text();
@@ -247,7 +248,7 @@ async function sdkRequest(url, options = {}) {
     try { body = JSON.parse(text); } catch { body = { raw: text }; }
   }
 
-  // Log response — for auth just confirm token presence, never log the token value
+  // Log full response body for every call; for auth only confirm token presence (never log value)
   if (isAuth) {
     log.info("eta.response", {
       method, url,
@@ -273,11 +274,10 @@ async function sdkRequest(url, options = {}) {
   return body || {};
 }
 
-function tryCountReceipts(bodyStr) {
-  try {
-    const parsed = typeof bodyStr === "string" ? JSON.parse(bodyStr) : bodyStr;
-    return Array.isArray(parsed?.receipts) ? parsed.receipts.length : undefined;
-  } catch { return undefined; }
+function parseBody(bodyStr) {
+  if (!bodyStr) return undefined;
+  if (typeof bodyStr !== "string") return bodyStr;
+  try { return JSON.parse(bodyStr); } catch { return bodyStr; }
 }
 
 async function authenticateEnv(cfg) {
@@ -345,22 +345,14 @@ function buildReceiptStatusMap(response) {
   return map;
 }
 
-function patchDeviceSerial(receipt, deviceSerial) {
-  if (!deviceSerial) return receipt;
-  const patched = JSON.parse(JSON.stringify(receipt));
-  if (patched.seller) patched.seller.deviceSerialNumber = deviceSerial;
-  return patched;
-}
-
 async function submitReceiptSet(cfg, receipts, token, type) {
   const url = `${cfg.apiUrl}/api/v1/receiptsubmissions`;
-  const patched = receipts.map((r) => patchDeviceSerial(r, cfg.deviceSerial));
 
-  log.info("eta.submit.start", { type, receiptCount: patched.length, url });
+  log.info("eta.submit.start", { type, receiptCount: receipts.length, url });
   const submitResponse = await sdkRequest(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ receipts: patched })
+    body: JSON.stringify({ receipts })
   });
 
   const submissionId = extractSubmissionId(submitResponse);
@@ -649,15 +641,15 @@ function buildSubmissionSummary(receiptCount, submissions, batchStatus) {
   return `Batch status: ${batchStatus}. Receipts: ${receiptCount}. ${submissionText}`;
 }
 
-app.delete("/api/history", async (_req, res, next) => {
-  try {
-    await pool.query("DELETE FROM batches");
-    log.warn("history.cleared");
-    res.status(204).end();
-  } catch (error) {
-    next(error);
-  }
-});
+// app.delete("/api/history", async (_req, res, next) => {
+//   try {
+//     await pool.query("DELETE FROM batches");
+//     log.warn("history.cleared");
+//     res.status(204).end();
+//   } catch (error) {
+//     next(error);
+//   }
+// });
 
 app.get("*", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
@@ -670,90 +662,90 @@ app.use((error, _req, res, _next) => {
 
 // ─── Startup import ───────────────────────────────────────────────────────────
 
-async function importMobileReceipts() {
-  if (!fs.existsSync(importDir)) return;
-  const files = fs.readdirSync(importDir).filter((f) => f.endsWith(".json"));
-  if (!files.length) return;
+// async function importMobileReceipts() {
+//   if (!fs.existsSync(importDir)) return;
+//   const files = fs.readdirSync(importDir).filter((f) => f.endsWith(".json"));
+//   if (!files.length) return;
 
-  const batchNumber = "mobile-import-2026-05-30";
-  const [existing] = await pool.execute(
-    "SELECT id FROM batches WHERE batch_number = :batchNumber",
-    { batchNumber }
-  );
-  if (existing.length) {
-    log.info("import.mobile.already_done", { batchNumber });
-    return;
-  }
+//   const batchNumber = "mobile-import-2026-05-30";
+//   const [existing] = await pool.execute(
+//     "SELECT id FROM batches WHERE batch_number = :batchNumber",
+//     { batchNumber }
+//   );
+//   if (existing.length) {
+//     log.info("import.mobile.already_done", { batchNumber });
+//     return;
+//   }
 
-  log.info("import.mobile.start", { files: files.length });
-  const receipts = [];
-  let submissionUuid = null;
-  let batchDate = null;
+//   log.info("import.mobile.start", { files: files.length });
+//   const receipts = [];
+//   let submissionUuid = null;
+//   let batchDate = null;
 
-  for (const file of files) {
-    try {
-      const data = JSON.parse(fs.readFileSync(path.join(importDir, file), "utf8"));
-      const uuid = path.basename(file, ".json");
-      const rawDoc = typeof data.rawDocument === "string" ? JSON.parse(data.rawDocument) : data.rawDocument;
-      const receiptType = rawDoc?.documentType?.receiptType || data.receipt?.documentType?.receiptType || "S";
-      if (!submissionUuid) submissionUuid = data.submissionUuid || null;
-      if (!batchDate) batchDate = data.dateTimeReceived || null;
-      receipts.push({
-        uuid,
-        receiptNumber: rawDoc?.header?.receiptNumber || "",
-        documentType: receiptType === "R" ? "Return" : "Order",
-        requestJson: rawDoc
-      });
-      log.info("import.mobile.file", { file, uuid, receiptNumber: rawDoc?.header?.receiptNumber });
-    } catch (e) {
-      log.warn("import.mobile.file_skip", { file, reason: e.message });
-    }
-  }
+//   for (const file of files) {
+//     try {
+//       const data = JSON.parse(fs.readFileSync(path.join(importDir, file), "utf8"));
+//       const uuid = path.basename(file, ".json");
+//       const rawDoc = typeof data.rawDocument === "string" ? JSON.parse(data.rawDocument) : data.rawDocument;
+//       const receiptType = rawDoc?.documentType?.receiptType || data.receipt?.documentType?.receiptType || "S";
+//       if (!submissionUuid) submissionUuid = data.submissionUuid || null;
+//       if (!batchDate) batchDate = data.dateTimeReceived || null;
+//       receipts.push({
+//         uuid,
+//         receiptNumber: rawDoc?.header?.receiptNumber || "",
+//         documentType: receiptType === "R" ? "Return" : "Order",
+//         requestJson: rawDoc
+//       });
+//       log.info("import.mobile.file", { file, uuid, receiptNumber: rawDoc?.header?.receiptNumber });
+//     } catch (e) {
+//       log.warn("import.mobile.file_skip", { file, reason: e.message });
+//     }
+//   }
 
-  if (!receipts.length) return;
+//   if (!receipts.length) return;
 
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [batchResult] = await connection.execute(
-      `INSERT INTO batches (batch_number, created_at, receipt_count, submissionID, status, request_json)
-       VALUES (:batchNumber, :createdAt, :receiptCount, :submissionId, 'valid', :requestJson)`,
-      {
-        batchNumber,
-        createdAt: toMysqlDate(batchDate),
-        receiptCount: receipts.length,
-        submissionId: submissionUuid,
-        requestJson: JSON.stringify({ source: "mobile-app-import" })
-      }
-    );
-    for (const receipt of receipts) {
-      await connection.execute(
-        `INSERT IGNORE INTO receipts (batch_id, receipt_number, document_type, uuid, status, submitted, request_json)
-         VALUES (:batchId, :receiptNumber, :documentType, :uuid, 'valid', 1, :requestJson)`,
-        {
-          batchId: batchResult.insertId,
-          receiptNumber: receipt.receiptNumber,
-          documentType: receipt.documentType,
-          uuid: receipt.uuid,
-          requestJson: JSON.stringify(receipt.requestJson)
-        }
-      );
-    }
-    await connection.commit();
-    log.info("import.mobile.done", { batchNumber, batchId: batchResult.insertId, count: receipts.length, submissionUuid });
-  } catch (error) {
-    await connection.rollback();
-    log.error("import.mobile.failed", { message: error.message });
-  } finally {
-    connection.release();
-  }
-}
+//   const connection = await pool.getConnection();
+//   try {
+//     await connection.beginTransaction();
+//     const [batchResult] = await connection.execute(
+//       `INSERT INTO batches (batch_number, created_at, receipt_count, submissionID, status, request_json)
+//        VALUES (:batchNumber, :createdAt, :receiptCount, :submissionId, 'valid', :requestJson)`,
+//       {
+//         batchNumber,
+//         createdAt: toMysqlDate(batchDate),
+//         receiptCount: receipts.length,
+//         submissionId: submissionUuid,
+//         requestJson: JSON.stringify({ source: "mobile-app-import" })
+//       }
+//     );
+//     for (const receipt of receipts) {
+//       await connection.execute(
+//         `INSERT IGNORE INTO receipts (batch_id, receipt_number, document_type, uuid, status, submitted, request_json)
+//          VALUES (:batchId, :receiptNumber, :documentType, :uuid, 'valid', 1, :requestJson)`,
+//         {
+//           batchId: batchResult.insertId,
+//           receiptNumber: receipt.receiptNumber,
+//           documentType: receipt.documentType,
+//           uuid: receipt.uuid,
+//           requestJson: JSON.stringify(receipt.requestJson)
+//         }
+//       );
+//     }
+//     await connection.commit();
+//     log.info("import.mobile.done", { batchNumber, batchId: batchResult.insertId, count: receipts.length, submissionUuid });
+//   } catch (error) {
+//     await connection.rollback();
+//     log.error("import.mobile.failed", { message: error.message });
+//   } finally {
+//     connection.release();
+//   }
+// }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 initializeDatabase()
   .then(ensureSchema)
-  .then(importMobileReceipts)
+ // .then(importMobileReceipts)
   .then(() => {
     app.listen(port, () => {
       log.info("server.start", { port, url: `http://localhost:${port}` });

@@ -15,6 +15,7 @@ const receiptTemplate = {
         "receiptNumber": "{{receiptNumber1}}",
         "uuid": "{{receiptUuid1}}",
         "previousUUID": "",
+        "referenceOldUUID": "",
         "currency": "EGP"
       },
       "documentType": {
@@ -28,8 +29,8 @@ const receiptTemplate = {
         "branchAddress": {
           "country": "EG",
           "governate": "Giza",
-          "regionCity": "6th of October",
-          "street": "Sakan Misr",
+          "regionCity": "6 October City (1)",
+          "street": "سكن مصر اكتوبر",
           "buildingNumber": "93"
         },
         "deviceSerialNumber": "",
@@ -53,6 +54,7 @@ const returnTemplate = {
         "receiptNumber": "{{receiptNumber1}}",
         "uuid": "{{returnreceiptUuid1}}",
         "previousUUID": "",
+        "referenceOldUUID": "",
         "referenceUUID": "",
         "currency": "EGP"
       },
@@ -67,8 +69,8 @@ const returnTemplate = {
         "branchAddress": {
           "country": "EG",
           "governate": "Giza",
-          "regionCity": "6th of October",
-          "street": "Sakan Misr",
+          "regionCity": "6 October City (1)",
+          "street": "سكن مصر اكتوبر",
           "buildingNumber": "93"
         },
         "deviceSerialNumber": "",
@@ -140,18 +142,52 @@ const els = {
   closeSdkModal: document.getElementById("closeSdkModal"),
   sdkSpinner: document.getElementById("sdkSpinner"),
   sdkSummary: document.getElementById("sdkSummary"),
-  sdkResponse: document.getElementById("sdkResponse")
+  sdkResponse: document.getElementById("sdkResponse"),
+  selectAll: document.getElementById("selectAll"),
+  prevUuidInput: document.getElementById("prevUuidInput")
 };
 
 let csvText = "";
 let csvRows = [];
 let processed = [];
+let checkedIndices = new Set(); // indices of rows ticked by the user
 let submissionFiles = [];
 let zipBlob = null;
 let selectedIndex = -1;
 let expanded = new Set();
 let currentBatchId = null;
 let currentEnv = "preprod";
+
+function getCheckedItems() {
+  return processed.filter((_, i) => checkedIndices.has(i));
+}
+
+// Rebuild ZIP / submissionFiles from the currently checked rows and refresh UI.
+function refreshCheckedOutputs() {
+  const items = getCheckedItems();
+  submissionFiles = splitSubmissionFiles(items);
+  zipBlob = items.length ? createZip(submissionFiles) : null;
+  currentBatchId = null; // selection changed → saved batch no longer valid
+  renderSummary();
+  updateButtons();
+}
+
+function updateSelectAllCheckbox() {
+  if (!processed.length) { els.selectAll.checked = false; els.selectAll.indeterminate = false; return; }
+  const n = checkedIndices.size;
+  els.selectAll.indeterminate = n > 0 && n < processed.length;
+  els.selectAll.checked = n === processed.length;
+}
+const envDeviceSerials = { preprod: "", prod: "" };
+
+async function fetchConfig() {
+  try {
+    const config = await apiRequest("/config");
+    envDeviceSerials.preprod = config.environments?.preprod?.deviceSerial || "";
+    envDeviceSerials.prod    = config.environments?.prod?.deviceSerial    || "";
+  } catch (_) { /* non-fatal — device serial stays empty */ }
+}
+fetchConfig();
 
 class SourceJsonParser {
   constructor(source) {
@@ -382,11 +418,6 @@ function dateToEta(value, offsetSeconds = 0) {
   return date.toISOString().replace(".000Z", "Z");
 }
 
-function dateSortValue(value) {
-  const parts = datePartsFromCsv(value);
-  if (!parts) return Number.MAX_SAFE_INTEGER;
-  return Date.UTC(parts.year, parts.month - 1, parts.day);
-}
 
 function requiredColumns() {
   return [
@@ -423,12 +454,11 @@ function groupRecords(records) {
     groups.get(key).rows.push(row);
   });
   return [...groups.values()].sort((a, b) => {
-    const dateDiff = dateSortValue(a.date) - dateSortValue(b.date);
-    if (dateDiff) return dateDiff;
-    const docDiff = (a.sourceDoc || "").localeCompare(b.sourceDoc || "");
-    if (docDiff) return docDiff;
-    if (a.isReturn !== b.isReturn) return a.isReturn ? 1 : -1;
-    return a.rows[0].__row - b.rows[0].__row;
+    const da = datePartsFromCsv(a.date);
+    const db = datePartsFromCsv(b.date);
+    const ta = da ? Date.UTC(da.year, da.month - 1, da.day) : Number.MAX_SAFE_INTEGER;
+    const tb = db ? Date.UTC(db.year, db.month - 1, db.day) : Number.MAX_SAFE_INTEGER;
+    return ta - tb;
   });
 }
 
@@ -493,9 +523,9 @@ function collectReasons(group, lines, receiptIndex) {
   return [...new Set(reasons)];
 }
 
-async function buildReceipts(records, includeVat) {
+async function buildReceipts(records, includeVat, startingPrevUUID = "") {
   const history = await getHistory();
-  let previousUUID = history.lastUUID || "";
+  let previousUUID = startingPrevUUID; // supplied by the "Previous UUID" input, not from DB
   const receiptIndex = { ...history.receiptIndex };
   const groups = groupRecords(records);
   const receipts = [];
@@ -516,6 +546,7 @@ async function buildReceipts(records, includeVat) {
       receipt.header.referenceUUID = receiptIndex[group.sourceDoc] || "";
     }
     receipt.documentType.receiptType = group.isReturn ? "R" : "S";
+    receipt.seller.deviceSerialNumber = envDeviceSerials[currentEnv] || "";
     receipt.itemData = lines.map((line) => line.item);
     receipt.totalSales = totalSales;
     receipt.netAmount = totalSales;
@@ -525,7 +556,7 @@ async function buildReceipts(records, includeVat) {
     } else {
       delete receipt.taxTotals;
     }
-    receipt.header.uuid = await calculateUuid(receipt);
+    receipt.header.uuid = await calculateUuid(receipt); // UUID computed after deviceSerialNumber is set
     previousUUID = receipt.header.uuid;
 
     const reasons = collectReasons(group, lines, receiptIndex);
@@ -659,13 +690,14 @@ function shouldIncludeRow(row) {
 }
 
 async function saveBatch() {
-  if (!processed.length || !saveBatchLocally) return;
+  const items = getCheckedItems();
+  if (!items.length || !saveBatchLocally) return;
   const batchNumber = `BATCH-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 17)}-${crypto.randomUUID().slice(0, 8)}`;
   const batch = {
     batchNumber,
     createdAt: new Date().toISOString(),
-    count: processed.length,
-    receipts: processed.map((item) => ({
+    count: items.length,
+    receipts: items.map((item) => ({
       number: item.group.number,
       type: item.type,
       sourceInvoice: item.group.sourceInvoice,
@@ -686,7 +718,7 @@ async function saveBatch() {
 
 function renderTable() {
   if (!processed.length) {
-    els.ordersBody.innerHTML = `<tr><td colspan="8"><div class="empty">No receipts were generated.</div></td></tr>`;
+    els.ordersBody.innerHTML = `<tr><td colspan="9"><div class="empty">No receipts were generated.</div></td></tr>`;
     return;
   }
   els.ordersBody.innerHTML = processed.map((item, index) => {
@@ -694,10 +726,11 @@ function renderTable() {
     const issueClass = item.reasons.length ? " issue-row" : "";
     const selected = index === selectedIndex ? " selected" : "";
     const isExpanded = expanded.has(index);
+    const isChecked = checkedIndices.has(index);
     const warning = item.reasons.length ? `<span class="alert" title="${escapeHtml(item.reasons.join("\n"))}">!</span>` : "";
     const lines = isExpanded ? `
       <tr class="line-details">
-        <td colspan="8">
+        <td colspan="9">
           <div class="line-box">
             <table class="line-grid">
               <thead><tr><th>SKU</th><th>Description</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Total</th><th>Item code</th></tr></thead>
@@ -719,6 +752,7 @@ function renderTable() {
       </tr>` : "";
     return `
       <tr class="${rowClass}${issueClass}${selected}" data-index="${index}">
+        <td class="row-check"><input type="checkbox" data-action="check" data-index="${index}" ${isChecked ? "checked" : ""} aria-label="Select row"></td>
         <td><button class="toggle" type="button" data-action="expand" data-index="${index}" aria-label="Expand row">${isExpanded ? "v" : ">"}</button></td>
         <td class="mono">${escapeHtml(item.group.number || "Missing")}</td>
         <td class="mono">${escapeHtml(item.group.sourceDoc || "Missing")}</td>
@@ -734,11 +768,15 @@ function renderTable() {
 }
 
 function renderSummary() {
-  const orderCount = processed.filter((item) => !item.group.isReturn).length;
-  const returnCount = processed.filter((item) => item.group.isReturn).length;
-  const sales = processed.filter((item) => !item.group.isReturn).reduce((sum, item) => sum + item.amount, 0);
-  const returns = processed.filter((item) => item.group.isReturn).reduce((sum, item) => sum + item.amount, 0);
-  els.totalCount.textContent = `${orderCount} Receipts, ${returnCount} Returns`;
+  const items = getCheckedItems();
+  const orderCount = items.filter((item) => !item.group.isReturn).length;
+  const returnCount = items.filter((item) => item.group.isReturn).length;
+  const sales = items.filter((item) => !item.group.isReturn).reduce((sum, item) => sum + item.amount, 0);
+  const returns = items.filter((item) => item.group.isReturn).reduce((sum, item) => sum + item.amount, 0);
+  const selLabel = checkedIndices.size < processed.length && processed.length > 0
+    ? ` (${checkedIndices.size}/${processed.length})`
+    : "";
+  els.totalCount.textContent = `${orderCount} Receipts, ${returnCount} Returns${selLabel}`;
   els.salesValue.textContent = money(sales);
   els.returnsValue.textContent = money(returns);
   els.jsonCount.textContent = String(submissionFiles.length);
@@ -761,10 +799,12 @@ function renderFilesPreview() {
 }
 
 function updateButtons() {
-  const hasAlerts = processed.some((item) => item.reasons.length);
+  const items = getCheckedItems();
+  const hasAlerts = items.some((item) => item.reasons.length);
+  const hasChecked = items.length > 0;
   els.viewFiles.disabled = !submissionFiles.length;
-  els.downloadZip.disabled = !zipBlob || hasAlerts;
-  els.sendSdk.disabled = !processed.length || !zipBlob;
+  els.downloadZip.disabled = !zipBlob || !hasChecked || hasAlerts;
+  els.sendSdk.disabled = !hasChecked || !zipBlob;
   els.copyJson.disabled = !processed.length && !submissionFiles.length;
 }
 
@@ -794,22 +834,24 @@ async function rebuildSelectedOutputs() {
   const selectedRows = csvRows.filter(shouldIncludeRow);
   if (!selectedRows.length) throw new Error("Select Orders, Returns, or both before processing.");
 
-  processed = await buildReceipts(selectedRows, includeVATDefault);
-  submissionFiles = splitSubmissionFiles(processed);
-  zipBlob = createZip(submissionFiles);
+  processed = await buildReceipts(selectedRows, includeVATDefault, els.prevUuidInput.value.trim());
+  checkedIndices = new Set(processed.map((_, i) => i)); // select all by default
+  submissionFiles = splitSubmissionFiles(processed);      // all checked = all processed
+  zipBlob = processed.length ? createZip(submissionFiles) : null;
   currentBatchId = null;
   const hasAlerts = processed.some((item) => item.reasons.length);
   selectedIndex = processed.length ? 0 : -1;
   expanded = new Set();
   renderTable();
   renderSummary();
+  updateSelectAllCheckbox();
   if (processed.length) selectRow(0);
   updateButtons();
 
-  if (zipBlob.size > maxZipBytes) {
+  if (zipBlob && zipBlob.size > maxZipBytes) {
     els.statusText.textContent = "ZIP is larger than 25 MB. Reduce the CSV size and process again.";
   } else if (hasAlerts) {
-    els.statusText.textContent = `Showing ${processed.length} selected receipt(s), but ZIP download is disabled until alerts are fixed.`;
+    els.statusText.textContent = `Showing ${processed.length} receipt(s), but ZIP download is disabled until alerts are fixed.`;
   } else {
     els.statusText.textContent = `${processed.length} receipt(s) ready in ${submissionFiles.length} JSON file(s). Click "Send to SDK" to submit.`;
   }
@@ -817,6 +859,7 @@ async function rebuildSelectedOutputs() {
 
 function renderProcessingError(error) {
   processed = [];
+  checkedIndices = new Set();
   submissionFiles = [];
   zipBlob = null;
   selectedIndex = -1;
@@ -865,9 +908,18 @@ els.includeReturns.addEventListener("change", async () => {
   }
 });
 
-els.envToggle.addEventListener("change", () => {
+els.prevUuidInput.addEventListener("input", async () => {
+  if (!csvRows.length) return;
+  try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
+});
+
+els.envToggle.addEventListener("change", async () => {
   currentEnv = els.envToggle.checked ? "prod" : "preprod";
   updateEnvDisplay();
+  // Rebuild so deviceSerialNumber and UUID reflect the new environment
+  if (csvRows.length) {
+    try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
+  }
 });
 
 function updateEnvDisplay() {
@@ -890,9 +942,35 @@ els.closeSdkModal.addEventListener("click", () => {
 els.sdkModal.addEventListener("click", (event) => {
   if (event.target.classList.contains("modal-backdrop")) els.sdkModal.hidden = true;
 });
+// Row checkbox toggles
+els.ordersBody.addEventListener("change", (event) => {
+  const checkbox = event.target.closest("input[data-action='check']");
+  if (!checkbox) return;
+  const index = Number(checkbox.dataset.index);
+  if (checkbox.checked) checkedIndices.add(index);
+  else checkedIndices.delete(index);
+  refreshCheckedOutputs();
+  updateSelectAllCheckbox();
+});
+
+// Select-all header checkbox
+els.selectAll.addEventListener("change", () => {
+  if (els.selectAll.checked) {
+    checkedIndices = new Set(processed.map((_, i) => i));
+  } else {
+    checkedIndices = new Set();
+  }
+  renderTable();
+  refreshCheckedOutputs();
+  updateSelectAllCheckbox();
+});
+
 els.ordersBody.addEventListener("click", (event) => {
   const selectedText = window.getSelection ? window.getSelection().toString() : "";
   if (selectedText.trim()) return;
+
+  // Don't propagate checkbox clicks into row-select
+  if (event.target.closest("input[data-action='check']")) return;
 
   const button = event.target.closest("button[data-action='expand']");
   if (button) {

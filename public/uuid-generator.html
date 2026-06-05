@@ -158,13 +158,6 @@
       box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
     }
 
-    .controls {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
     .actions {
       display: flex;
       flex-wrap: wrap;
@@ -301,10 +294,6 @@
         margin-top: 14px;
       }
 
-      .controls {
-        grid-template-columns: 1fr;
-      }
-
       textarea {
         min-height: 420px;
       }
@@ -332,17 +321,6 @@
           <button class="secondary" id="loadSample" type="button">Load sample</button>
         </div>
         <div class="panel-body">
-          <div class="controls">
-            <div>
-              <label for="receiptNumber">Receipt number replacement</label>
-              <input id="receiptNumber" value="R12345" autocomplete="off">
-            </div>
-            <div>
-              <label for="receiptNumberToken">Receipt number token</label>
-              <input id="receiptNumberToken" value="{{receiptNumber1}}" autocomplete="off">
-            </div>
-          </div>
-
           <label for="jsonInput">Submission body</label>
           <textarea id="jsonInput" spellcheck="false" placeholder="{ &quot;receipts&quot;: [ ... ] }"></textarea>
 
@@ -603,18 +581,6 @@
       };
     }
 
-    function replacePrimitive(node, token, replacement) {
-      if (!token) return;
-      if (node.type === "primitive") {
-        if (node.raw === token) node.raw = replacement;
-        return;
-      }
-      if (node.type === "array") {
-        node.items.forEach((item) => replacePrimitive(item, token, replacement));
-        return;
-      }
-      node.props.forEach((prop) => replacePrimitive(prop.value, token, replacement));
-    }
 
     function setReceiptUuidEmpty(receipt) {
       const header = findProp(receipt, "header");
@@ -704,12 +670,6 @@
     async function generate() {
       try {
         const root = new SourceJsonParser(jsonInput.value).parse();
-        const token = document.getElementById("receiptNumberToken").value;
-        const replacement = document.getElementById("receiptNumber").value;
-        if (token && replacement) {
-          replacePrimitive(root, token, replacement);
-        }
-
         const receipts = extractReceipts(root);
         const generated = [];
         for (let index = 0; index < receipts.length; index += 1) {

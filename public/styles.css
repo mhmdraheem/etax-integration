@@ -147,6 +147,28 @@
       font-size: 13px;
     }
 
+    .prev-uuid-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      font-weight: 700;
+    }
+
+    .prev-uuid-input {
+      width: 460px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 0 8px;
+      font: 12px/1 Consolas, "Courier New", monospace;
+      color: var(--code);
+      background: #fff;
+      outline: none;
+    }
+
+    .prev-uuid-input:focus { border-color: var(--accent); }
+
     .options label {
       display: inline-flex;
       align-items: center;
@@ -239,6 +261,26 @@
     .date-col,
     .date-cell {
       white-space: nowrap;
+    }
+
+    .row-check {
+      text-align: center;
+      vertical-align: middle;
+      padding: 0 4px;
+    }
+
+    .row-check input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    th input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: var(--accent);
+      cursor: pointer;
     }
 
     .toggle {
