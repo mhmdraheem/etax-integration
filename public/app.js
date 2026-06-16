@@ -414,7 +414,7 @@ function datePartsFromCsv(value) {
 function dateToEta(value, offsetSeconds = 0) {
   const parts = datePartsFromCsv(value);
   if (!parts) return "";
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 23, 0, 0));
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, offsetSeconds, 0));
   return date.toISOString().replace(".000Z", "Z");
 }
 
@@ -488,7 +488,7 @@ function mergeLines(rows, includeVat) {
       internalCode: product ? product.internalCode : line.sku,
       description: product ? product.description : (line.rows[0]["Description"] || line.sku || "Unknown product"),
       itemType: "EGS",
-      itemCode: product ? product.itemCode : "",
+      itemCode: product ? currentEnv === 'preprod'? 'EG-776878123-776878123-CHAR100BOX': product.itemCode : "",
       unitType: product ? product.unitType : "EA",
       quantity: line.quantity,
       unitPrice: includeVat ? unitNet : unitGross,
@@ -803,7 +803,8 @@ function updateButtons() {
   const hasAlerts = items.some((item) => item.reasons.length);
   const hasChecked = items.length > 0;
   els.viewFiles.disabled = !submissionFiles.length;
-  els.downloadZip.disabled = !zipBlob || !hasChecked || hasAlerts;
+  els.downloadZip.disabled = !zipBlob || !hasChecked;
+  //els.downloadZip.disabled = !zipBlob || !hasChecked || hasAlerts;
   els.sendSdk.disabled = !hasChecked || !zipBlob;
   els.copyJson.disabled = !processed.length && !submissionFiles.length;
 }
@@ -932,7 +933,7 @@ function updateEnvDisplay() {
 updateEnvDisplay();
 els.viewFiles.addEventListener("click", renderFilesPreview);
 els.downloadZip.addEventListener("click", () => {
-  if (zipBlob) downloadBlob(zipBlob, `noon-eta-submissions-${new Date().toISOString().slice(0, 10)}.zip`);
+  if (zipBlob) downloadBlob(zipBlob, `noon-eta-submissions-${els.fileName.textContent.replace('.csv', '')}.zip`);
 });
 els.sendSdk.addEventListener("click", submitToSdk);
 els.copyJson.addEventListener("click", () => navigator.clipboard.writeText(els.jsonPreview.textContent));
