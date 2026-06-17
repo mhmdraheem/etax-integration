@@ -157,6 +157,7 @@ let selectedIndex = -1;
 let expanded = new Set();
 let currentBatchId = null;
 let currentEnv = "preprod";
+const refUUIDs = new Map(); // keyed by group.key → manually entered referenceUUID per return receipt
 
 function getCheckedItems() {
   return processed.filter((_, i) => checkedIndices.has(i));
@@ -411,10 +412,14 @@ function datePartsFromCsv(value) {
   return null;
 }
 
-function dateToEta(value, offsetSeconds = 0) {
+function dateToEta(value, offsetMinutes = 0, isReturn = false) {
   const parts = datePartsFromCsv(value);
   if (!parts) return "";
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, offsetSeconds, 0));
+  let date;
+  if(isReturn) 
+    date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 20, offsetMinutes, 0));
+  else 
+    date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, offsetMinutes, 0));
   return date.toISOString().replace(".000Z", "Z");
 }
 
@@ -516,8 +521,8 @@ function collectReasons(group, lines, receiptIndex) {
     const price = parseFloat((row["Price Including VAT (Document Currency)"] || "").replace(/,/g, ""));
     if (!Number.isFinite(price)) reasons.push(`Row ${row.__row}: invalid price`);
   });
-  if (group.isReturn && !receiptIndex[group.sourceDoc]) {
-    reasons.push("Return reference UUID not found in database history for this Source Doc Nr");
+  if (group.isReturn && !refUUIDs.get(group.key) && !receiptIndex[group.sourceDoc]) {
+    reasons.push("Missing referenceUUID — enter it in the Reference UUID field on this row");
   }
   if (!lines.length) reasons.push("No item lines found");
   return [...new Set(reasons)];
@@ -538,12 +543,12 @@ async function buildReceipts(records, includeVat, startingPrevUUID = "") {
     const totalAmount = round2(lines.reduce((sum, line) => sum + line.grossTotal, 0));
     const taxTotal = round2(lines.reduce((sum, line) => sum + line.vatAmount, 0));
 
-    receipt.header.dateTimeIssued = dateToEta(group.date, groupIndex);
+    receipt.header.dateTimeIssued = dateToEta(group.date, groupIndex, group.isReturn);
     receipt.header.receiptNumber = group.number;
     receipt.header.previousUUID = previousUUID;
     receipt.header.currency = "EGP";
     if (group.isReturn) {
-      receipt.header.referenceUUID = receiptIndex[group.sourceDoc] || "";
+      receipt.header.referenceUUID = refUUIDs.get(group.key) || receiptIndex[group.sourceDoc] || "";
     }
     receipt.documentType.receiptType = group.isReturn ? "R" : "S";
     receipt.seller.deviceSerialNumber = envDeviceSerials[currentEnv] || "";
@@ -750,6 +755,12 @@ function renderTable() {
           </div>
         </td>
       </tr>` : "";
+    const refUuidRow = item.group.isReturn ? `
+      <tr class="ref-uuid-row return-row${issueClass}">
+        <td colspan="9"><label class="ref-uuid-cell-label">Reference UUID
+          <input type="text" class="ref-uuid-cell-input" data-action="set-ref-uuid" data-key="${escapeHtml(item.group.key)}" value="${escapeHtml(refUUIDs.get(item.group.key) || "")}" placeholder="UUID of the original sale receipt" spellcheck="false">
+        </label></td>
+      </tr>` : "";
     return `
       <tr class="${rowClass}${issueClass}${selected}" data-index="${index}">
         <td class="row-check"><input type="checkbox" data-action="check" data-index="${index}" ${isChecked ? "checked" : ""} aria-label="Select row"></td>
@@ -762,6 +773,7 @@ function renderTable() {
         <td class="date-cell">${escapeHtml(item.receipt.header.dateTimeIssued || "Missing")}</td>
         <td>${warning}</td>
       </tr>
+      ${refUuidRow}
       ${lines}
     `;
   }).join("");
@@ -879,6 +891,7 @@ els.csvFile.addEventListener("change", async () => {
   csvText = await file.text();
   els.fileName.textContent = file.name;
   csvRows = parseCsv(csvText);
+  refUUIDs.clear();
   try {
     await rebuildSelectedOutputs();
   } catch (error) {
@@ -910,6 +923,15 @@ els.includeReturns.addEventListener("change", async () => {
 });
 
 els.prevUuidInput.addEventListener("input", async () => {
+  if (!csvRows.length) return;
+  try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
+});
+
+// Per-row referenceUUID inputs (return receipts only) — rebuild on blur/Enter
+els.ordersBody.addEventListener("change", async (event) => {
+  const input = event.target.closest("input[data-action='set-ref-uuid']");
+  if (!input) return;
+  refUUIDs.set(input.dataset.key, input.value.trim());
   if (!csvRows.length) return;
   try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
 });
