@@ -89,7 +89,6 @@
           <span id="statusText" class="status">Ready.</span>
           <button id="viewFiles" class="secondary" type="button" disabled>View JSON file(s)</button>
           <button id="downloadZip" type="button" disabled>Download ZIP archive</button>
-          <button id="sendSdk" type="button" disabled>Send to SDK</button>
         </div>
       </div>
 
@@ -102,23 +101,6 @@
       </div>
     </section>
 
-    <div id="sdkModal" class="modal" hidden>
-      <div class="modal-backdrop"></div>
-      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="sdkModalTitle">
-        <div class="modal-header">
-          <h2 id="sdkModalTitle">SDK Submission</h2>
-          <button id="closeSdkModal" class="secondary" type="button">Close</button>
-        </div>
-        <div class="modal-body">
-          <div id="sdkSpinner" class="spinner-row" hidden>
-            <span class="spinner"></span>
-            <span>Submitting and polling final status...</span>
-          </div>
-          <p id="sdkSummary" class="modal-summary"></p>
-          <pre id="sdkResponse" class="modal-response"></pre>
-        </div>
-      </section>
-    </div>
   </main>
   <script src="app.js"></script>
 </body>

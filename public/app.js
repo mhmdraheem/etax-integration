@@ -1,11 +1,9 @@
 ﻿const includeVATDefault = false;
-const saveBatchLocally = true;
 const vatRate = 14;
 const maxReceiptsPerFile = 500;
 const maxFilesPerZip = 100;
 const maxJsonBytes = 2560 * 1024;
 const maxZipBytes = 25 * 1024 * 1024;
-const apiBase = "/api";
 
 const receiptTemplate = {
   "receipts": [
@@ -135,14 +133,8 @@ const els = {
   statusText: document.getElementById("statusText"),
   viewFiles: document.getElementById("viewFiles"),
   downloadZip: document.getElementById("downloadZip"),
-  sendSdk: document.getElementById("sendSdk"),
   jsonPreview: document.getElementById("jsonPreview"),
   copyJson: document.getElementById("copyJson"),
-  sdkModal: document.getElementById("sdkModal"),
-  closeSdkModal: document.getElementById("closeSdkModal"),
-  sdkSpinner: document.getElementById("sdkSpinner"),
-  sdkSummary: document.getElementById("sdkSummary"),
-  sdkResponse: document.getElementById("sdkResponse"),
   selectAll: document.getElementById("selectAll"),
   prevUuidInput: document.getElementById("prevUuidInput")
 };
@@ -155,7 +147,6 @@ let submissionFiles = [];
 let zipBlob = null;
 let selectedIndex = -1;
 let expanded = new Set();
-let currentBatchId = null;
 let currentEnv = "preprod";
 const refUUIDs = new Map(); // keyed by group.key → manually entered referenceUUID per return receipt
 
@@ -168,7 +159,6 @@ function refreshCheckedOutputs() {
   const items = getCheckedItems();
   submissionFiles = splitSubmissionFiles(items);
   zipBlob = items.length ? createZip(submissionFiles) : null;
-  currentBatchId = null; // selection changed → saved batch no longer valid
   renderSummary();
   updateButtons();
 }
@@ -179,16 +169,10 @@ function updateSelectAllCheckbox() {
   els.selectAll.indeterminate = n > 0 && n < processed.length;
   els.selectAll.checked = n === processed.length;
 }
-const envDeviceSerials = { preprod: "", prod: "" };
-
-async function fetchConfig() {
-  try {
-    const config = await apiRequest("/config");
-    envDeviceSerials.preprod = config.environments?.preprod?.deviceSerial || "";
-    envDeviceSerials.prod    = config.environments?.prod?.deviceSerial    || "";
-  } catch (_) { /* non-fatal — device serial stays empty */ }
-}
-fetchConfig();
+const envDeviceSerials = {
+  preprod: "PREPROD_SERIAL_REMOVED",
+  prod: "PROD_SERIAL_REMOVED"
+};
 
 class SourceJsonParser {
   constructor(source) {
@@ -368,27 +352,6 @@ function parseCsv(text) {
   });
 }
 
-async function apiRequest(path, options = {}) {
-  const response = await fetch(`${apiBase}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `API request failed with ${response.status}`);
-  }
-  if (response.status === 204) return null;
-  return response.json();
-}
-
-async function getHistory() {
-  const history = await apiRequest("/history");
-  return {
-    batches: [],
-    receiptIndex: history.receiptIndex || {},
-    lastUUID: history.lastUUID || ""
-  };
-}
 
 function datePartsFromCsv(value) {
   if (!value) return "";
@@ -521,7 +484,7 @@ function collectReasons(group, lines, receiptIndex) {
     const price = parseFloat((row["Price Including VAT (Document Currency)"] || "").replace(/,/g, ""));
     if (!Number.isFinite(price)) reasons.push(`Row ${row.__row}: invalid price`);
   });
-  if (group.isReturn && !refUUIDs.get(group.key) && !receiptIndex[group.sourceDoc]) {
+  if (group.isReturn && !refUUIDs.get(group.key)) {
     reasons.push("Missing referenceUUID — enter it in the Reference UUID field on this row");
   }
   if (!lines.length) reasons.push("No item lines found");
@@ -529,9 +492,8 @@ function collectReasons(group, lines, receiptIndex) {
 }
 
 async function buildReceipts(records, includeVat, startingPrevUUID = "") {
-  const history = await getHistory();
-  let previousUUID = startingPrevUUID; // supplied by the "Previous UUID" input, not from DB
-  const receiptIndex = { ...history.receiptIndex };
+  let previousUUID = startingPrevUUID;
+  const receiptIndex = {};
   const groups = groupRecords(records);
   const receipts = [];
 
@@ -694,32 +656,6 @@ function shouldIncludeRow(row) {
   return false;
 }
 
-async function saveBatch() {
-  const items = getCheckedItems();
-  if (!items.length || !saveBatchLocally) return;
-  const batchNumber = `BATCH-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 17)}-${crypto.randomUUID().slice(0, 8)}`;
-  const batch = {
-    batchNumber,
-    createdAt: new Date().toISOString(),
-    count: items.length,
-    receipts: items.map((item) => ({
-      number: item.group.number,
-      type: item.type,
-      sourceInvoice: item.group.sourceInvoice,
-      sourceDoc: item.group.sourceDoc,
-      request: item.receipt,
-      uuid: item.receipt.header.uuid,
-      status: item.reasons.length ? "invalid" : "valid",
-      submitted: false
-    }))
-  };
-  const result = await apiRequest("/batches", {
-    method: "POST",
-    body: JSON.stringify(batch)
-  });
-  currentBatchId = result.batchId;
-  return result.batchId;
-}
 
 function renderTable() {
   if (!processed.length) {
@@ -811,13 +747,9 @@ function renderFilesPreview() {
 }
 
 function updateButtons() {
-  const items = getCheckedItems();
-  const hasAlerts = items.some((item) => item.reasons.length);
-  const hasChecked = items.length > 0;
+  const hasChecked = getCheckedItems().length > 0;
   els.viewFiles.disabled = !submissionFiles.length;
   els.downloadZip.disabled = !zipBlob || !hasChecked;
-  //els.downloadZip.disabled = !zipBlob || !hasChecked || hasAlerts;
-  els.sendSdk.disabled = !hasChecked || !zipBlob;
   els.copyJson.disabled = !processed.length && !submissionFiles.length;
 }
 
@@ -851,7 +783,6 @@ async function rebuildSelectedOutputs() {
   checkedIndices = new Set(processed.map((_, i) => i)); // select all by default
   submissionFiles = splitSubmissionFiles(processed);      // all checked = all processed
   zipBlob = processed.length ? createZip(submissionFiles) : null;
-  currentBatchId = null;
   const hasAlerts = processed.some((item) => item.reasons.length);
   selectedIndex = processed.length ? 0 : -1;
   expanded = new Set();
@@ -864,9 +795,9 @@ async function rebuildSelectedOutputs() {
   if (zipBlob && zipBlob.size > maxZipBytes) {
     els.statusText.textContent = "ZIP is larger than 25 MB. Reduce the CSV size and process again.";
   } else if (hasAlerts) {
-    els.statusText.textContent = `Showing ${processed.length} receipt(s), but ZIP download is disabled until alerts are fixed.`;
+    els.statusText.textContent = `Showing ${processed.length} receipt(s) with ${processed.filter(i => i.reasons.length).length} alert(s) — fix before downloading.`;
   } else {
-    els.statusText.textContent = `${processed.length} receipt(s) ready in ${submissionFiles.length} JSON file(s). Click "Send to SDK" to submit.`;
+    els.statusText.textContent = `${processed.length} receipt(s) ready in ${submissionFiles.length} JSON file(s).`;
   }
 }
 
@@ -876,7 +807,6 @@ function renderProcessingError(error) {
   submissionFiles = [];
   zipBlob = null;
   selectedIndex = -1;
-  currentBatchId = null;
   expanded = new Set();
   renderTable();
   renderSummary();
@@ -957,14 +887,7 @@ els.viewFiles.addEventListener("click", renderFilesPreview);
 els.downloadZip.addEventListener("click", () => {
   if (zipBlob) downloadBlob(zipBlob, `noon-eta-submissions-${els.fileName.textContent.replace('.csv', '')}.zip`);
 });
-els.sendSdk.addEventListener("click", submitToSdk);
 els.copyJson.addEventListener("click", () => navigator.clipboard.writeText(els.jsonPreview.textContent));
-els.closeSdkModal.addEventListener("click", () => {
-  els.sdkModal.hidden = true;
-});
-els.sdkModal.addEventListener("click", (event) => {
-  if (event.target.classList.contains("modal-backdrop")) els.sdkModal.hidden = true;
-});
 // Row checkbox toggles
 els.ordersBody.addEventListener("change", (event) => {
   const checkbox = event.target.closest("input[data-action='check']");
@@ -1007,38 +930,3 @@ els.ordersBody.addEventListener("click", (event) => {
   if (row) selectRow(Number(row.dataset.index));
 });
 
-async function submitToSdk() {
-  if (currentEnv === "prod") {
-    const confirmed = confirm(
-      "WARNING: You are about to submit to the PRODUCTION (live) ETA environment.\n\n" +
-      "Receipts submitted to production are recorded with the Egyptian Tax Authority and cannot be undone.\n\n" +
-      "Proceed with production submission?"
-    );
-    if (!confirmed) return;
-  }
-  try {
-    els.sdkModal.hidden = false;
-    els.sdkSpinner.hidden = false;
-    els.sdkSummary.textContent = `Submitting to ${currentEnv === "prod" ? "PRODUCTION" : "pre-production"}...`;
-    els.sdkResponse.textContent = "";
-    els.sendSdk.disabled = true;
-    els.statusText.textContent = "Saving batch and sending to ETA...";
-    if (!currentBatchId) {
-      await saveBatch();
-    }
-    const result = await apiRequest(`/batches/${currentBatchId}/submit`, {
-      method: "POST",
-      body: JSON.stringify({ env: currentEnv })
-    });
-    els.sdkSummary.textContent = result.summary || `Batch status: ${result.status || "unknown"}`;
-    els.sdkResponse.textContent = JSON.stringify(result.response || result, null, 2);
-    els.statusText.textContent = `ETA submission finished (${currentEnv}): ${result.status || "unknown"}.`;
-  } catch (error) {
-    els.sdkSummary.textContent = "ETA submission failed.";
-    els.sdkResponse.textContent = String(error.message || error);
-    els.statusText.textContent = "ETA submission failed.";
-  } finally {
-    els.sdkSpinner.hidden = true;
-    updateButtons();
-  }
-}
