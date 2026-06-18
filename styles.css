@@ -147,33 +147,6 @@
       font-size: 13px;
     }
 
-    .ref-uuid-row td {
-      padding: 4px 8px 8px 46px;
-    }
-
-    .ref-uuid-cell-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--muted);
-    }
-
-    .ref-uuid-cell-input {
-      flex: 1;
-      height: 26px;
-      border: 1px solid var(--line);
-      border-radius: 4px;
-      padding: 0 7px;
-      font: 12px/1 Consolas, "Courier New", monospace;
-      color: var(--code);
-      background: rgba(255, 255, 255, 0.7);
-      outline: none;
-    }
-
-    .ref-uuid-cell-input:focus { border-color: var(--accent); background: #fff; }
 
 
     .options label {

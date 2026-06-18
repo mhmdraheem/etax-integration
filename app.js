@@ -183,10 +183,17 @@ function updateSelectAllCheckbox() {
   els.selectAll.indeterminate = n > 0 && n < processed.length;
   els.selectAll.checked = n === processed.length;
 }
-const envDeviceSerials = {
-  preprod: "PREPROD_SERIAL_REMOVED",
-  prod: "PROD_SERIAL_REMOVED"
-};
+let envDeviceSerials = { preprod: "", prod: "" };
+
+(async function loadDeviceSerials() {
+  try {
+    const cfg = await (await fetch("/api/config")).json();
+    envDeviceSerials.preprod = cfg.preprodSerial || "";
+    envDeviceSerials.prod    = cfg.prodSerial    || "";
+  } catch (e) {
+    console.error("Could not load device config:", e.message);
+  }
+})();
 
 class SourceJsonParser {
   constructor(source) {
@@ -499,7 +506,7 @@ function collectReasons(group, lines, receiptIndex) {
     if (!Number.isFinite(price)) reasons.push(`Row ${row.__row}: invalid price`);
   });
   if (group.isReturn && !refUUIDs.get(group.key)) {
-    reasons.push("Missing referenceUUID — enter it in the Reference UUID field on this row");
+    reasons.push(`Original sale receipt not found in ETA for invoice ${group.sourceInvoice || group.number} — it may not have been submitted yet`);
   }
   if (!lines.length) reasons.push("No item lines found");
   return [...new Set(reasons)];
@@ -705,12 +712,7 @@ function renderTable() {
           </div>
         </td>
       </tr>` : "";
-    const refUuidRow = item.group.isReturn ? `
-      <tr class="ref-uuid-row return-row${issueClass}">
-        <td colspan="9"><label class="ref-uuid-cell-label">Reference UUID
-          <input type="text" class="ref-uuid-cell-input" data-action="set-ref-uuid" data-key="${escapeHtml(item.group.key)}" value="${escapeHtml(refUUIDs.get(item.group.key) || "")}" placeholder="UUID of the original sale receipt" spellcheck="false">
-        </label></td>
-      </tr>` : "";
+    const refUuidRow = "";
     return `
       <tr class="${rowClass}${issueClass}${selected}" data-index="${index}">
         <td class="row-check"><input type="checkbox" data-action="check" data-index="${index}" ${isChecked ? "checked" : ""} aria-label="Select row"></td>
@@ -829,6 +831,32 @@ function renderProcessingError(error) {
   els.statusText.textContent = "Processing failed.";
 }
 
+// Auto-search ETA for the sale receipt UUID of each return row (called after CSV load / env change)
+async function fetchReturnUUIDs(rows) {
+  const seen    = new Set();
+  const toFetch = [];
+  for (const row of rows) {
+    if ((row["Document Type"] || "").toLowerCase() !== "creditnote") continue;
+    const creditNr  = row["Credit Note Nr"] || "";
+    const invoiceNr = row["Invoice Nr"]     || "";
+    const key = `R:${creditNr || `row-${row.__row}`}`;
+    if (!invoiceNr || seen.has(key) || refUUIDs.has(key)) continue;
+    seen.add(key);
+    toFetch.push({ key, invoiceNr });
+  }
+  if (!toFetch.length) return;
+  els.statusText.textContent = `Searching ETA for ${toFetch.length} return receipt UUID(s)…`;
+  await Promise.all(toFetch.map(async ({ key, invoiceNr }) => {
+    try {
+      const res  = await fetch(`/proxy/receipts/search?invoiceNr=${encodeURIComponent(invoiceNr)}&env=${encodeURIComponent(currentEnv)}`);
+      const body = await res.json();
+      refUUIDs.set(key, body.uuid || "");
+    } catch {
+      refUUIDs.set(key, "");
+    }
+  }));
+}
+
 els.csvFile.addEventListener("change", async () => {
   const file = els.csvFile.files[0];
   if (!file) return;
@@ -837,6 +865,7 @@ els.csvFile.addEventListener("change", async () => {
   csvRows = parseCsv(csvText);
   refUUIDs.clear();
   await fetchLastUUID();
+  await fetchReturnUUIDs(csvRows);
   try {
     await rebuildSelectedOutputs();
   } catch (error) {
@@ -869,20 +898,14 @@ els.includeReturns.addEventListener("change", async () => {
 
 
 
-// Per-row referenceUUID inputs (return receipts only) — rebuild on blur/Enter
-els.ordersBody.addEventListener("change", async (event) => {
-  const input = event.target.closest("input[data-action='set-ref-uuid']");
-  if (!input) return;
-  refUUIDs.set(input.dataset.key, input.value.trim());
-  if (!csvRows.length) return;
-  try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
-});
 
 els.envToggle.addEventListener("change", async () => {
   currentEnv = els.envToggle.checked ? "prod" : "preprod";
   updateEnvDisplay();
   if (csvRows.length) {
+    refUUIDs.clear();
     await fetchLastUUID();
+    await fetchReturnUUIDs(csvRows);
     try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
   }
 });
