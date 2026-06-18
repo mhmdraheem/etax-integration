@@ -2,7 +2,7 @@ const path   = require("node:path");
 const fs     = require("node:fs");
 const crypto = require("node:crypto");
 const express = require("express");
-const noon   = require("./noon");
+//const noon   = require("./noon");
 
 // Load .env — no extra dependency
 const envFile = path.join(__dirname, ".env");
@@ -58,7 +58,7 @@ async function getEtaToken(cfg) {
     }).toString()
   });
   const text = await res.text();
-  console.log(`[eta-auth] status=${res.status} body=${text}`);
+  //console.log(`[eta-auth] status=${res.status} body=${text}`);
   if (!res.ok) throw new Error(`Auth failed (${res.status}): ${text}`);
   const { access_token } = JSON.parse(text);
   if (!access_token) throw new Error("No access_token in auth response");
@@ -82,7 +82,7 @@ app.get("/proxy/receipts/recent", async (req, res) => {
     console.log(`[recent] GET ${url}`);
     const r    = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const text = await r.text();
-    console.log(`[recent] status=${r.status} body=${text}`);
+    //console.log(`[recent] status=${r.status} body=${text}`);
     if (!r.ok) throw new Error(`Receipts API failed (${r.status}): ${text}`);
 
     const uuid = JSON.parse(text).receipts?.[0]?.uuid;
@@ -116,7 +116,7 @@ app.get("/proxy/receipts/search", async (req, res) => {
     console.log(`[search] GET ${url}`);
     const r    = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const text = await r.text();
-    console.log(`[search] status=${r.status} body=${text}`);
+    //console.log(`[search] status=${r.status} body=${text}`);
     if (!r.ok) throw new Error(`Search failed (${r.status}): ${text}`);
 
     const uuid = JSON.parse(text).receipts?.[0]?.uuid || null;
