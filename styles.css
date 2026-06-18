@@ -147,14 +147,6 @@
       font-size: 13px;
     }
 
-    .prev-uuid-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: auto;
-      font-weight: 700;
-    }
-
     .ref-uuid-row td {
       padding: 4px 8px 8px 46px;
     }
@@ -183,19 +175,6 @@
 
     .ref-uuid-cell-input:focus { border-color: var(--accent); background: #fff; }
 
-    .prev-uuid-input {
-      width: 460px;
-      height: 30px;
-      border: 1px solid var(--line);
-      border-radius: 5px;
-      padding: 0 8px;
-      font: 12px/1 Consolas, "Courier New", monospace;
-      color: var(--code);
-      background: #fff;
-      outline: none;
-    }
-
-    .prev-uuid-input:focus { border-color: var(--accent); }
 
     .options label {
       display: inline-flex;

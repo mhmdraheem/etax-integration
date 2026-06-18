@@ -136,7 +136,6 @@ const els = {
   jsonPreview: document.getElementById("jsonPreview"),
   copyJson: document.getElementById("copyJson"),
   selectAll: document.getElementById("selectAll"),
-  prevUuidInput: document.getElementById("prevUuidInput")
 };
 
 let csvText = "";
@@ -148,7 +147,22 @@ let zipBlob = null;
 let selectedIndex = -1;
 let expanded = new Set();
 let currentEnv = "preprod";
+let lastEtaUUID = "";
 const refUUIDs = new Map(); // keyed by group.key → manually entered referenceUUID per return receipt
+
+async function fetchLastUUID() {
+  els.statusText.textContent = "Fetching last submitted UUID from ETA…";
+  try {
+    const res = await fetch(`/proxy/receipts/recent?env=${encodeURIComponent(currentEnv)}`);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    if (!body.uuid) throw new Error("No UUID returned");
+    lastEtaUUID = body.uuid;
+  } catch (err) {
+    lastEtaUUID = "";
+    els.statusText.textContent = `Could not fetch last UUID: ${err.message}`;
+  }
+}
 
 function getCheckedItems() {
   return processed.filter((_, i) => checkedIndices.has(i));
@@ -779,7 +793,7 @@ async function rebuildSelectedOutputs() {
   const selectedRows = csvRows.filter(shouldIncludeRow);
   if (!selectedRows.length) throw new Error("Select Orders, Returns, or both before processing.");
 
-  processed = await buildReceipts(selectedRows, includeVATDefault, els.prevUuidInput.value.trim());
+  processed = await buildReceipts(selectedRows, includeVATDefault, lastEtaUUID);
   checkedIndices = new Set(processed.map((_, i) => i)); // select all by default
   submissionFiles = splitSubmissionFiles(processed);      // all checked = all processed
   zipBlob = processed.length ? createZip(submissionFiles) : null;
@@ -822,6 +836,7 @@ els.csvFile.addEventListener("change", async () => {
   els.fileName.textContent = file.name;
   csvRows = parseCsv(csvText);
   refUUIDs.clear();
+  await fetchLastUUID();
   try {
     await rebuildSelectedOutputs();
   } catch (error) {
@@ -852,10 +867,7 @@ els.includeReturns.addEventListener("change", async () => {
   }
 });
 
-els.prevUuidInput.addEventListener("input", async () => {
-  if (!csvRows.length) return;
-  try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
-});
+
 
 // Per-row referenceUUID inputs (return receipts only) — rebuild on blur/Enter
 els.ordersBody.addEventListener("change", async (event) => {
@@ -869,8 +881,8 @@ els.ordersBody.addEventListener("change", async (event) => {
 els.envToggle.addEventListener("change", async () => {
   currentEnv = els.envToggle.checked ? "prod" : "preprod";
   updateEnvDisplay();
-  // Rebuild so deviceSerialNumber and UUID reflect the new environment
   if (csvRows.length) {
+    await fetchLastUUID();
     try { await rebuildSelectedOutputs(); } catch (error) { renderProcessingError(error); }
   }
 });
@@ -881,6 +893,7 @@ function updateEnvDisplay() {
   els.envPreprodLabel.classList.remove("env-prod-active");
   els.envProdLabel.classList.toggle("env-active", isProd);
   els.envProdLabel.classList.toggle("env-prod-active", isProd);
+
 }
 updateEnvDisplay();
 els.viewFiles.addEventListener("click", renderFilesPreview);
