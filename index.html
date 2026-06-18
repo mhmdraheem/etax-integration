@@ -27,15 +27,24 @@
           </label>
           <span class="env-label" id="envProdLabel">Prod</span>
         </div>
-        <label class="file-control">
-          Upload CSV
-          <input id="csvFile" type="file" accept=".csv,text/csv">
-        </label>
       </div>
     </header>
 
+    <div class="noon-bar">
+      <span class="noon-bar-label">Fetch from Noon</span>
+      <input id="noonFrom" type="date" class="noon-date" title="From date">
+      <span class="noon-sep">→</span>
+      <input id="noonTo" type="date" class="noon-date" title="To date">
+      <button id="fetchNoon" type="button">Fetch</button>
+      <span class="noon-bar-or">or upload CSV →</span>
+      <label class="file-control noon-upload">
+        Upload CSV
+        <input id="csvFile" type="file" accept=".csv,text/csv">
+      </label>
+    </div>
+
     <div class="options">
-      <span id="fileName">No CSV selected</span>
+      <span id="fileName">No data loaded</span>
       <label><input id="includeOrders" type="checkbox" checked> Orders</label>
       <label><input id="includeReturns" type="checkbox"> Returns</label>
     </div>
@@ -72,7 +81,7 @@
               </tr>
             </thead>
             <tbody id="ordersBody">
-              <tr><td colspan="8"><div class="empty">Upload a Noon CSV file to begin.</div></td></tr>
+              <tr><td colspan="8"><div class="empty">Fetch from Noon or upload a CSV file to begin.</div></td></tr>
             </tbody>
           </table>
         </div>

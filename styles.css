@@ -137,6 +137,56 @@
 
     button.secondary:hover { background: #f0f3f7; }
 
+    .noon-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding: 9px 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .noon-bar-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .noon-date {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 8px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+    }
+
+    .noon-date:focus { border-color: var(--accent); }
+
+    .noon-sep {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .noon-bar-or {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .noon-upload {
+      min-height: 34px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
     .options {
       display: flex;
       gap: 14px;

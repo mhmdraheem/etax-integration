@@ -119,6 +119,9 @@ const productMap = {
 
 const els = {
   csvFile: document.getElementById("csvFile"),
+  noonFrom: document.getElementById("noonFrom"),
+  noonTo: document.getElementById("noonTo"),
+  fetchNoon: document.getElementById("fetchNoon"),
   envToggle: document.getElementById("envToggle"),
   envPreprodLabel: document.getElementById("envPreprodLabel"),
   envProdLabel: document.getElementById("envProdLabel"),
@@ -137,6 +140,16 @@ const els = {
   copyJson: document.getElementById("copyJson"),
   selectAll: document.getElementById("selectAll"),
 };
+
+// Default date range: last 30 days
+(function setDefaultDates() {
+  const today = new Date();
+  const from  = new Date(today);
+  from.setDate(from.getDate() - 30);
+  const fmt = d => d.toISOString().slice(0, 10);
+  els.noonFrom.value = fmt(from);
+  els.noonTo.value   = fmt(today);
+})();
 
 let csvText = "";
 let csvRows = [];
@@ -964,5 +977,59 @@ els.ordersBody.addEventListener("click", (event) => {
   }
   const row = event.target.closest("tr[data-index]");
   if (row) selectRow(Number(row.dataset.index));
+});
+
+// ─── Noon fetch ───────────────────────────────────────────────────────────────
+
+async function loadCsvText(text, label) {
+  csvText = text;
+  els.fileName.textContent = label;
+  csvRows = parseCsv(csvText);
+  refUUIDs.clear();
+  if (!csvRows.length) throw new Error("No data rows in the response.");
+  await fetchLastUUID();
+  await rebuildSelectedOutputs();
+}
+
+els.fetchNoon.addEventListener("click", async () => {
+  const from = els.noonFrom.value;
+  const to   = els.noonTo.value;
+  if (!from || !to) {
+    els.statusText.textContent = "Select a date range first.";
+    return;
+  }
+
+  els.fetchNoon.disabled = true;
+  els.statusText.textContent = "Authenticating with Noon…";
+
+  try {
+    const res  = await fetch(`/proxy/noon/invoices?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const text = await res.text();
+
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = JSON.parse(text).error || msg; } catch (_) { /* raw text */ }
+      throw new Error(msg);
+    }
+
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+    if (ct.includes("json")) {
+      // The internal API returned JSON — we don't yet know its schema.
+      // Log to console and surface a friendly message.
+      console.log("[noon] JSON response (first 2000 chars):", text.substring(0, 2000));
+      throw new Error(
+        "Noon returned JSON instead of CSV. Check the browser console and server console " +
+        "to see the data structure, then report it so we can add a converter."
+      );
+    }
+
+    // Treat anything else (text/csv, text/plain, unknown) as CSV text.
+    await loadCsvText(text, `Noon ${from} → ${to}`);
+  } catch (err) {
+    els.statusText.textContent = `Noon fetch failed: ${err.message}`;
+  } finally {
+    els.fetchNoon.disabled = false;
+  }
 });
 
