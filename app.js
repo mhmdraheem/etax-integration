@@ -136,6 +136,14 @@ const els = {
   jsonPreview: document.getElementById("jsonPreview"),
   copyJson: document.getElementById("copyJson"),
   selectAll: document.getElementById("selectAll"),
+  sendEta: document.getElementById("sendEta"),
+  submitModal: document.getElementById("submitModal"),
+  modalRequest: document.getElementById("modalRequest"),
+  modalResponse: document.getElementById("modalResponse"),
+  modalStatus: document.getElementById("modalStatus"),
+  exportResponse: document.getElementById("exportResponse"),
+  sendModalBtn: document.getElementById("sendModalBtn"),
+  closeModal: document.getElementById("closeModal"),
 };
 
 let csvText = "";
@@ -767,6 +775,7 @@ function updateButtons() {
   els.viewFiles.disabled = !submissionFiles.length;
   els.downloadZip.disabled = !zipBlob || !hasChecked;
   els.copyJson.disabled = !processed.length && !submissionFiles.length;
+  els.sendEta.disabled = !submissionFiles.length;
 }
 
 function escapeHtml(value) {
@@ -964,5 +973,79 @@ els.ordersBody.addEventListener("click", (event) => {
   }
   const row = event.target.closest("tr[data-index]");
   if (row) selectRow(Number(row.dataset.index));
+});
+
+// ─── Submit to ETA modal ──────────────────────────────────────────────────────
+
+let lastResponseData = null;
+
+function openSubmitModal() {
+  els.modalRequest.textContent = submissionFiles.map((f) => `// ${f.name}\n${f.text}`).join("\n\n");
+  els.modalResponse.textContent = "Click Send to submit.";
+  els.modalResponse.classList.add("modal-pre-muted");
+  els.modalStatus.textContent = `${submissionFiles.length} file(s) ready — env: ${currentEnv}.`;
+  els.exportResponse.disabled = true;
+  els.sendModalBtn.disabled = false;
+  lastResponseData = null;
+  els.submitModal.removeAttribute("hidden");
+}
+
+function closeSubmitModal() {
+  els.submitModal.setAttribute("hidden", "");
+}
+
+els.sendEta.addEventListener("click", openSubmitModal);
+els.closeModal.addEventListener("click", closeSubmitModal);
+els.submitModal.addEventListener("click", (e) => {
+  if (e.target === els.submitModal) closeSubmitModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !els.submitModal.hasAttribute("hidden")) closeSubmitModal();
+});
+
+els.sendModalBtn.addEventListener("click", async () => {
+  els.sendModalBtn.disabled = true;
+  els.exportResponse.disabled = true;
+  els.modalResponse.textContent = "";
+  els.modalResponse.classList.remove("modal-pre-muted");
+  lastResponseData = null;
+
+  const results = [];
+  for (let i = 0; i < submissionFiles.length; i++) {
+    const file = submissionFiles[i];
+    els.modalStatus.textContent = `Sending file ${i + 1}/${submissionFiles.length}: ${file.name}…`;
+    try {
+      const parsed = JSON.parse(file.text);
+      const r = await fetch("/proxy/eta/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receipts: parsed.receipts, env: currentEnv })
+      });
+      const data = await r.json();
+      results.push({ file: file.name, ...data });
+    } catch (err) {
+      results.push({ file: file.name, ok: false, error: err.message });
+    }
+  }
+
+  lastResponseData = results;
+  els.modalResponse.textContent = results
+    .map((r) => `// ${r.file}\n${JSON.stringify({ ok: r.ok, status: r.status, body: r.body ?? r.error }, null, 2)}`)
+    .join("\n\n");
+
+  const allOk = results.every((r) => r.ok);
+  els.modalStatus.textContent = allOk
+    ? `All ${results.length} submission(s) accepted by ETA.`
+    : `Some submissions failed — review the responses.`;
+  els.exportResponse.disabled = false;
+  els.sendModalBtn.disabled = false;
+});
+
+els.exportResponse.addEventListener("click", () => {
+  if (!lastResponseData) return;
+  const text = JSON.stringify(lastResponseData, null, 2);
+  const blob = new Blob([text], { type: "application/json" });
+  const ts = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+  downloadBlob(blob, `eta-response-${ts}.json`);
 });
 

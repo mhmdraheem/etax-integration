@@ -138,6 +138,42 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
+// ─── ETA — submit receipts ────────────────────────────────────────────────────
+
+app.post("/proxy/eta/submit", express.json({ limit: "50mb" }), async (req, res) => {
+  const env = req.body.env === "prod" ? "prod" : "preprod";
+  const { receipts } = req.body;
+
+  if (!Array.isArray(receipts) || !receipts.length) {
+    return res.status(400).json({ error: "receipts array is required" });
+  }
+
+  const cfg = envConfigs[env];
+  if (!cfg.clientId || !cfg.clientSecret) {
+    return res.status(400).json({ error: `No credentials configured for "${env}" in .env` });
+  }
+
+  try {
+    const token = await getEtaToken(cfg);
+    const url   = `${cfg.apiUrl}/api/v1/receiptsubmissions`;
+    console.log(`[submit] POST ${url} (${receipts.length} receipts, env=${env})`);
+    const r     = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ receipts })
+    });
+    const text = await r.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = { raw: text }; }
+    console.log(`[submit] status=${r.status}`);
+    res.json({ ok: r.ok, status: r.status, body });
+  } catch (err) {
+    const cause = err.cause ? String(err.cause) : "";
+    console.error(`[submit] error: ${err.message}${cause ? ` | cause: ${cause}` : ""}`);
+    res.status(500).json({ error: err.message, cause });
+  }
+});
+
 // ─── Noon — fetch invoices & credit notes ─────────────────────────────────────
 
 app.get("/proxy/noon/invoices", async (req, res) => {

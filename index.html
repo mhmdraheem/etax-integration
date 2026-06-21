@@ -85,7 +85,8 @@
         <div class="bottom-actions">
           <span id="statusText" class="status">Ready.</span>
           <button id="viewFiles" class="secondary" type="button" disabled>View JSON file(s)</button>
-          <button id="downloadZip" type="button" disabled>Download ZIP archive</button>
+          <button id="downloadZip" class="secondary" type="button" disabled>Download ZIP archive</button>
+          <button id="sendEta" type="button" disabled>Send to ETA</button>
         </div>
       </div>
 
@@ -99,6 +100,30 @@
     </section>
 
   </main>
+  <div id="submitModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Submit to ETA</h2>
+        <button id="closeModal" class="secondary modal-close" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-pane">
+          <div class="modal-pane-title">Request</div>
+          <pre id="modalRequest" class="modal-pre"></pre>
+        </div>
+        <div class="modal-pane">
+          <div class="modal-pane-title">Response</div>
+          <pre id="modalResponse" class="modal-pre modal-pre-muted">Click Send to submit.</pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span id="modalStatus" class="status"></span>
+        <button id="exportResponse" class="secondary" type="button" disabled>Export Response</button>
+        <button id="sendModalBtn" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

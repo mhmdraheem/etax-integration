@@ -440,6 +440,95 @@
     .env-toggle-wrap input:checked + .env-slider { background: #dc2626; }
     .env-toggle-wrap input:checked + .env-slider::before { transform: translateX(18px); }
 
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay[hidden] { display: none; }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      width: min(1200px, calc(100vw - 40px));
+      max-height: calc(100vh - 40px);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
+    .modal-title { margin: 0; font-size: 16px; }
+
+    .modal-close { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+
+    .modal-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .modal-pane {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .modal-pane + .modal-pane { border-left: 1px solid var(--line); }
+
+    .modal-pane-title {
+      padding: 8px 14px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+      flex-shrink: 0;
+    }
+
+    .modal-pre {
+      margin: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 14px;
+      background: #101828;
+      color: #e5e7eb;
+      font: 12px/1.5 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      height: 60vh;
+    }
+
+    .modal-pre-muted { color: #6b7280; }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
     @media (max-width: 1080px) {
       header { align-items: flex-start; flex-direction: column; }
       .top-actions { justify-content: flex-start; }
