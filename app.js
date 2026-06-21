@@ -409,9 +409,9 @@ function dateToEta(value, offsetMinutes = 0, isReturn = false) {
   if (!parts) return "";
   let date;
   if(isReturn) 
-    date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 20, offsetMinutes, 0));
+    date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 21, offsetMinutes, 0));
   else 
-    date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, offsetMinutes, 0));
+    date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 20, offsetMinutes, 0));
   return date.toISOString().replace(".000Z", "Z");
 }
 
