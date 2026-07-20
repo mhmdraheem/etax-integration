@@ -98,7 +98,7 @@
 
     .field-row {
       display: grid;
-      grid-template-columns: 1fr 1.6fr;
+      grid-template-columns: 1fr 1fr 1.6fr;
       gap: 12px;
     }
 
@@ -250,6 +250,10 @@
             <input id="amount" type="number" min="0" step="0.01" placeholder="0.00">
           </div>
           <div class="field">
+            <label for="receiptDate">Date</label>
+            <input id="receiptDate" type="date">
+          </div>
+          <div class="field">
             <label for="receiptNr">Receipt Number</label>
             <input id="receiptNr" type="text" placeholder="FREELANCE-DD-MM-YYYY">
           </div>
@@ -297,6 +301,7 @@
 
     // ─── DOM refs ─────────────────────────────────────────────────────────────
     const amountEl    = document.getElementById("amount");
+    const receiptDateEl = document.getElementById("receiptDate");
     const receiptNrEl = document.getElementById("receiptNr");
     const prevStatus  = document.getElementById("prevStatus");
     const jsonPreview = document.getElementById("jsonPreview");
@@ -312,19 +317,20 @@
     let lastResponse   = null;
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
-    function todayIso() {
+    function localDateString() {
       const now = new Date();
-      const y   = now.getFullYear();
-      const m   = String(now.getMonth() + 1).padStart(2, "0");
-      const d   = String(now.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}T19:00:00Z`;
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
     }
 
-    function todayReceiptNr() {
-      const now = new Date();
-      const y   = now.getFullYear();
-      const m   = String(now.getMonth() + 1).padStart(2, "0");
-      const d   = String(now.getDate()).padStart(2, "0");
+    function dateToIso(ymd) {
+      return `${ymd}T19:00:00Z`;
+    }
+
+    function dateToReceiptNr(ymd) {
+      const [y, m, d] = ymd.split("-");
       return `FREELANCE-${d}-${m}-${y}`;
     }
 
@@ -332,11 +338,11 @@
       return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
     }
 
-    function buildReceiptObject(amt, nr, prevUuid, serial) {
+    function buildReceiptObject(amt, nr, prevUuid, serial, ymd) {
       const a = round2(amt || 0);
       return {
         header: {
-          dateTimeIssued: todayIso(),
+          dateTimeIssued: dateToIso(ymd),
           receiptNumber: nr || todayReceiptNr(),
           uuid: "",
           previousUUID: prevUuid,
@@ -473,15 +479,18 @@
     // ─── Build + render ────────────────────────────────────────────────────────
     async function rebuild() {
       const amt = parseFloat(amountEl.value) || 0;
-      const nr  = receiptNrEl.value.trim() || todayReceiptNr();
-      const receipt = buildReceiptObject(amt, nr, previousUUID, deviceSerial);
+      const ymd = receiptDateEl.value || localDateString();
+      const nr  = receiptNrEl.value.trim() || dateToReceiptNr(ymd);
+      const receipt = buildReceiptObject(amt, nr, previousUUID, deviceSerial, ymd);
       receipt.header.uuid = await computeUuid(receipt);
       jsonPreview.value = JSON.stringify(receipt, null, 2);
       sendBtn.disabled = amt <= 0;
     }
 
     // ─── Initialise ───────────────────────────────────────────────────────────
-    receiptNrEl.value = todayReceiptNr();
+    const today = localDateString();
+    receiptDateEl.value = today;
+    receiptNrEl.value = dateToReceiptNr(today);
 
     (async function init() {
       // Fetch device serial and previous UUID in parallel
@@ -511,6 +520,13 @@
 
     // ─── Events ───────────────────────────────────────────────────────────────
     amountEl.addEventListener("input", rebuild);
+    receiptDateEl.addEventListener("change", () => {
+      const ymd = receiptDateEl.value;
+      if (ymd && /^FREELANCE-\d{2}-\d{2}-\d{4}$/.test(receiptNrEl.value)) {
+        receiptNrEl.value = dateToReceiptNr(ymd);
+      }
+      rebuild();
+    });
     receiptNrEl.addEventListener("input", rebuild);
 
     copyJson.addEventListener("click", () => navigator.clipboard.writeText(jsonPreview.value));
