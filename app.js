@@ -154,7 +154,7 @@ let submissionFiles = [];
 let zipBlob = null;
 let selectedIndex = -1;
 let expanded = new Set();
-let currentEnv = "preprod";
+let currentEnv = "prod";
 let lastEtaUUID = "";
 const refUUIDs = new Map(); // keyed by group.key → manually entered referenceUUID per return receipt
 

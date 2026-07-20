@@ -41,9 +41,14 @@ const port = Number(process.env.PORT || 3000);
 
 app.use(express.static(__dirname));
 
-// ─── ETA auth helper ──────────────────────────────────────────────────────────
+// ─── ETA auth helper (cached token per client_id) ────────────────────────────
+
+const tokenCache = {};
 
 async function getEtaToken(cfg) {
+  const cached = tokenCache[cfg.clientId];
+  if (cached && Date.now() < cached.expiresAt) return cached.token;
+
   const res  = await fetch(`${cfg.idUrl}/connect/token`, {
     method: "POST",
     headers: {
@@ -58,10 +63,14 @@ async function getEtaToken(cfg) {
     }).toString()
   });
   const text = await res.text();
-  //console.log(`[eta-auth] status=${res.status} body=${text}`);
   if (!res.ok) throw new Error(`Auth failed (${res.status}): ${text}`);
-  const { access_token } = JSON.parse(text);
+  const { access_token, expires_in } = JSON.parse(text);
   if (!access_token) throw new Error("No access_token in auth response");
+
+  // subtract 60 s safety margin; fall back to 4 min if expires_in is absent
+  const ttl = (expires_in ? expires_in - 60 : 240) * 1000;
+  tokenCache[cfg.clientId] = { token: access_token, expiresAt: Date.now() + ttl };
+  console.log(`[eta-auth] new token for ${cfg.clientId}, expires in ${Math.round(ttl / 1000)}s`);
   return access_token;
 }
 
