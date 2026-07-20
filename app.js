@@ -85,8 +85,8 @@ const returnTemplate = {
 };
 
 const productMap = {
-  "CHAR-200-BOX-VBUNDLE": {
-    internalCode: "CHAR-200-BOX-VBUNDLE",
+  "CHAR-200-BOX": {
+    internalCode: "CHAR-200-BOX",
     description: "Fast Lighting incense Charcoal - 200 pieces",
     itemCode: "EG-776878123-CHAR200BOX",
     unitType: "PK"
