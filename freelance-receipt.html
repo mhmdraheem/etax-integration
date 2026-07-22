@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ETA Freelance Receipt Submitter</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #5d6a78;
+      --line: #d9dee7;
+      --accent: #0f766e;
+      --accent-dark: #0b5f59;
+      --danger: #b42318;
+      --warn-bg: #fffbfa;
+      --warn-line: #fecdca;
+      --ok-bg: #f0fdf4;
+      --ok-line: #bbf7d0;
+      --code: #101828;
+      --soft: #edf7f5;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    main {
+      width: min(780px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+
+    .page-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .page-nav-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: #fff;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .page-nav-link:hover { background: #f0f3f7; }
+
+    .page-nav-link.active {
+      border-color: #a7d7d2;
+      background: var(--soft);
+      color: var(--accent-dark);
+    }
+
+    header { margin-bottom: 18px; }
+
+    h1 { margin: 0; font-size: 24px; font-weight: 700; }
+
+    .subtitle { margin: 5px 0 0; color: var(--muted); font-size: 14px; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 24px rgba(16, 24, 40, 0.05);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-title { margin: 0; font-size: 16px; font-weight: 700; }
+
+    .panel-body { padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1.6fr;
+      gap: 12px;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+
+    label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    input[type="number"],
+    input[type="text"] {
+      width: 100%;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: 15px/1 Arial, sans-serif;
+      padding: 0 10px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
+    }
+
+    .status-line {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fafbfc;
+    }
+
+    .status-line.ok   { color: #166534; border-color: var(--ok-line);   background: var(--ok-bg); }
+    .status-line.err  { color: var(--danger); border-color: var(--warn-line); background: var(--warn-bg); }
+
+    textarea {
+      width: 100%;
+      min-height: 460px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--code);
+      color: #e5e7eb;
+      font: 12px/1.55 Consolas, "Courier New", monospace;
+      padding: 12px;
+      outline: none;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button {
+      min-height: 38px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 8px 16px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--accent-dark); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    button.secondary {
+      background: #fff;
+      border-color: var(--line);
+      color: var(--text);
+    }
+
+    button.secondary:hover { background: #f3f5f7; }
+
+    .response-wrap {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .response-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 12px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .response-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .response-pre {
+      margin: 0;
+      padding: 12px;
+      background: var(--code);
+      color: #e5e7eb;
+      font: 12px/1.55 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    @media (max-width: 700px) {
+      .field-row { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 420px) {
+      .field-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="page-nav" aria-label="App pages">
+      <a class="page-nav-link" href="index.html">Noon CSV Receipt Builder</a>
+      <a class="page-nav-link" href="uuid-generator.html">ETA UUID Generator</a>
+      <a class="page-nav-link active" href="freelance-receipt.html">ETA Freelance Receipt</a>
+    </nav>
+
+    <header>
+      <h1>ETA Freelance Receipt</h1>
+      <p class="subtitle">Builds and submits a single freelance service receipt directly to ETA Production.</p>
+    </header>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Receipt</h2>
+      </div>
+      <div class="panel-body">
+
+        <div class="field-row">
+          <div class="field">
+            <label for="amount">Amount (USD)</label>
+            <input id="amount" type="number" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="field">
+            <label for="exchangeRate">Exchange Rate</label>
+            <input id="exchangeRate" type="number" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="field">
+            <label for="receiptDate">Date</label>
+            <input id="receiptDate" type="date">
+          </div>
+          <div class="field">
+            <label for="receiptNr">Receipt Number</label>
+            <input id="receiptNr" type="text" placeholder="FREELANCE-DD-MM-YYYY">
+          </div>
+        </div>
+
+        <p id="prevStatus" class="status-line">Fetching previous UUID from ETA Production…</p>
+
+        <div class="field">
+          <label for="jsonPreview">Receipt JSON — UUID injected automatically</label>
+          <textarea id="jsonPreview" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+        </div>
+
+        <div class="actions">
+          <button id="sendBtn" type="button" disabled>Send to ETA Production</button>
+          <button id="copyJson" class="secondary" type="button">Copy JSON</button>
+        </div>
+
+        <div id="responseWrap" class="response-wrap" hidden>
+          <div class="response-header">
+            <span class="response-label">ETA Response</span>
+            <button id="exportBtn" class="secondary" type="button" style="min-height:28px;padding:4px 10px;font-size:13px">Export</button>
+          </div>
+          <pre id="responseText" class="response-pre"></pre>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ─── Seller / item constants ───────────────────────────────────────────────
+    const SELLER = {
+      rin: "776878123",
+      companyTradeName: "محمد عبدالباسط عبدالرحمن عبدالرحيم",
+      branchCode: "0",
+      branchAddress: {
+        country: "EG",
+        governate: "Giza",
+        regionCity: "6 October City (1)",
+        street: "سكن مصر اكتوبر",
+        buildingNumber: "93"
+      },
+      activityCode: "6209"
+    };
+
+    // ─── DOM refs ─────────────────────────────────────────────────────────────
+    const amountEl      = document.getElementById("amount");
+    const exchangeRateEl = document.getElementById("exchangeRate");
+    const receiptDateEl = document.getElementById("receiptDate");
+    const receiptNrEl = document.getElementById("receiptNr");
+    const prevStatus  = document.getElementById("prevStatus");
+    const jsonPreview = document.getElementById("jsonPreview");
+    const sendBtn     = document.getElementById("sendBtn");
+    const copyJson    = document.getElementById("copyJson");
+    const responseWrap = document.getElementById("responseWrap");
+    const responseText = document.getElementById("responseText");
+    const exportBtn    = document.getElementById("exportBtn");
+
+    // ─── State ────────────────────────────────────────────────────────────────
+    let previousUUID   = "";
+    let deviceSerial   = "";
+    let lastResponse   = null;
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+    function localDateString() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function dateToIso(ymd) {
+      return `${ymd}T19:00:00Z`;
+    }
+
+    function dateToReceiptNr(ymd) {
+      const [y, m, d] = ymd.split("-");
+      return `FREELANCE-${d}-${m}-${y}`;
+    }
+
+    function round2(v) {
+      return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+    }
+
+    function buildReceiptObject(amt, nr, prevUuid, serial, ymd) {
+      const a = round2(amt || 0);
+      return {
+        header: {
+          dateTimeIssued: dateToIso(ymd),
+          receiptNumber: nr || todayReceiptNr(),
+          uuid: "",
+          previousUUID: prevUuid,
+          referenceOldUUID: "",
+          currency: "EGP"
+        },
+        documentType: { receiptType: "S", typeVersion: "1.2" },
+        seller: { ...SELLER, deviceSerialNumber: serial },
+        buyer: { type: "P" },
+        itemData: [{
+          internalCode: "EG-776878123-FREELANCE",
+          description: "Freelance Services",
+          itemType: "EGS",
+          itemCode: "EG-776878123-FREELANCE",
+          unitType: "JOB",
+          quantity: 1,
+          unitPrice: a,
+          netSale: a,
+          totalSale: a,
+          total: a
+        }],
+        totalSales: a,
+        netAmount: a,
+        totalAmount: a,
+        paymentMethod: "C"
+      };
+    }
+
+    // ─── UUID calculation (same algo as main app) ─────────────────────────────
+    class SourceJsonParser {
+      constructor(source) { this.source = source; this.index = 0; }
+      parse() {
+        this.skipWS();
+        const v = this.parseValue();
+        this.skipWS();
+        if (this.index !== this.source.length) throw new Error(`Unexpected text at pos ${this.index}`);
+        return v;
+      }
+      skipWS() { while (/\s/.test(this.source[this.index])) this.index++; }
+      parseValue() {
+        this.skipWS();
+        const c = this.source[this.index];
+        if (c === "\"") return { type: "primitive", raw: this.parseString() };
+        if (c === "{")  return this.parseObject();
+        if (c === "[")  return this.parseArray();
+        return this.parseLiteral();
+      }
+      parseString() {
+        this.index++;
+        const start = this.index;
+        let esc = false;
+        while (this.index < this.source.length) {
+          const c = this.source[this.index];
+          if (esc) { esc = false; }
+          else if (c === "\\") { esc = true; }
+          else if (c === "\"") { const raw = this.source.slice(start, this.index); this.index++; return raw; }
+          this.index++;
+        }
+        throw new Error("Unterminated string");
+      }
+      parseLiteral() {
+        const start = this.index;
+        while (this.index < this.source.length && !/[\s,\}\]]/.test(this.source[this.index])) this.index++;
+        const raw = this.source.slice(start, this.index);
+        if (!raw) throw new Error(`Expected value at ${this.index}`);
+        return { type: "primitive", raw };
+      }
+      parseObject() {
+        this.index++;
+        const props = [];
+        this.skipWS();
+        if (this.source[this.index] === "}") { this.index++; return { type: "object", props }; }
+        while (true) {
+          this.skipWS();
+          const name = this.parseString();
+          this.skipWS();
+          this.index++; // ':'
+          props.push({ name, value: this.parseValue() });
+          this.skipWS();
+          const c = this.source[this.index++];
+          if (c === "}") break;
+        }
+        return { type: "object", props };
+      }
+      parseArray() {
+        this.index++;
+        const items = [];
+        this.skipWS();
+        if (this.source[this.index] === "]") { this.index++; return { type: "array", items }; }
+        while (true) {
+          items.push(this.parseValue());
+          this.skipWS();
+          const c = this.source[this.index++];
+          if (c === "]") break;
+        }
+        return { type: "array", items };
+      }
+    }
+
+    function serializeNode(node) {
+      if (node.type === "primitive") return `"${node.raw}"`;
+      if (node.type === "object") return node.props.map((p) => serializeProp(p.name, p.value)).join("");
+      throw new Error("Array values must go through their property");
+    }
+    function serializeProp(name, value) {
+      const u = name.toUpperCase();
+      if (value.type === "array") return `"${u}"` + value.items.map((i) => `"${u}"${serializeNode(i)}`).join("");
+      return `"${u}"${serializeNode(value)}`;
+    }
+    function findProp(obj, name) {
+      return (obj && obj.type === "object" && obj.props.find((p) => p.name === name)) || null;
+    }
+    function cloneNode(n) {
+      if (n.type === "primitive") return { type: "primitive", raw: n.raw };
+      if (n.type === "array")     return { type: "array", items: n.items.map(cloneNode) };
+      return { type: "object", props: n.props.map((p) => ({ name: p.name, value: cloneNode(p.value) })) };
+    }
+
+    async function sha256Hex(text) {
+      const data = new TextEncoder().encode(text);
+      const buf  = await crypto.subtle.digest("SHA-256", data);
+      return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function computeUuid(receipt) {
+      const clone = JSON.parse(JSON.stringify(receipt));
+      clone.header.uuid = "";
+      const node = new SourceJsonParser(JSON.stringify(clone)).parse();
+      const h = findProp(node, "header");
+      if (h) { const u = findProp(h.value, "uuid"); if (u) u.value = { type: "primitive", raw: "" }; }
+      return sha256Hex(serializeNode(cloneNode(node)));
+    }
+
+    // ─── Build + render ────────────────────────────────────────────────────────
+    async function rebuild() {
+      const usd  = parseFloat(amountEl.value) || 0;
+      const rate = parseFloat(exchangeRateEl.value) || 0;
+      const amt  = round2(usd * rate);
+      const ymd  = receiptDateEl.value || localDateString();
+      const nr   = receiptNrEl.value.trim() || dateToReceiptNr(ymd);
+      const receipt = buildReceiptObject(amt, nr, previousUUID, deviceSerial, ymd);
+      receipt.header.uuid = await computeUuid(receipt);
+      jsonPreview.value = JSON.stringify(receipt, null, 2);
+      sendBtn.disabled = usd <= 0 || rate <= 0;
+    }
+
+    // ─── Initialise ───────────────────────────────────────────────────────────
+    const today = localDateString();
+    receiptDateEl.value = today;
+    receiptNrEl.value = dateToReceiptNr(today);
+
+    (async function init() {
+      // Fetch device serial and previous UUID in parallel
+      const [cfgRes, uuidRes] = await Promise.allSettled([
+        fetch("/api/config").then((r) => r.json()),
+        fetch("/proxy/receipts/recent?env=prod").then((r) => r.json())
+      ]);
+
+      if (cfgRes.status === "fulfilled") {
+        deviceSerial = cfgRes.value.prodSerial || "";
+      }
+
+      if (uuidRes.status === "fulfilled" && uuidRes.value.uuid) {
+        previousUUID = uuidRes.value.uuid;
+        prevStatus.textContent = `Previous UUID: ${previousUUID}`;
+        prevStatus.className = "status-line ok";
+      } else {
+        const msg = uuidRes.status === "fulfilled"
+          ? (uuidRes.value.error || "No receipts found in ETA Production")
+          : "Could not reach server";
+        prevStatus.textContent = `Could not fetch previous UUID — ${msg}`;
+        prevStatus.className = "status-line err";
+      }
+
+      await rebuild();
+    })();
+
+    // ─── Events ───────────────────────────────────────────────────────────────
+    amountEl.addEventListener("input", rebuild);
+    exchangeRateEl.addEventListener("input", rebuild);
+    receiptDateEl.addEventListener("change", () => {
+      const ymd = receiptDateEl.value;
+      if (ymd && /^FREELANCE-\d{2}-\d{2}-\d{4}$/.test(receiptNrEl.value)) {
+        receiptNrEl.value = dateToReceiptNr(ymd);
+      }
+      rebuild();
+    });
+    receiptNrEl.addEventListener("input", rebuild);
+
+    copyJson.addEventListener("click", () => navigator.clipboard.writeText(jsonPreview.value));
+
+    sendBtn.addEventListener("click", async () => {
+      let receipt;
+      try {
+        receipt = JSON.parse(jsonPreview.value);
+      } catch (e) {
+        responseWrap.removeAttribute("hidden");
+        responseText.textContent = `JSON parse error: ${e.message}`;
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending…";
+      responseWrap.removeAttribute("hidden");
+      responseText.textContent = "Waiting for ETA…";
+      lastResponse = null;
+
+      try {
+        const r    = await fetch("/proxy/eta/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ receipts: [receipt], env: "prod" })
+        });
+        const data = await r.json();
+        lastResponse = data;
+        responseText.textContent = JSON.stringify(data, null, 2);
+
+        if (data.ok) {
+          // Update previousUUID from the submitted receipt's UUID
+          previousUUID = receipt.header.uuid;
+          prevStatus.textContent = `Previous UUID: ${previousUUID}`;
+          prevStatus.className = "status-line ok";
+        }
+      } catch (err) {
+        responseText.textContent = `Request failed: ${err.message}`;
+      }
+
+      sendBtn.disabled = parseFloat(amountEl.value) <= 0;
+      sendBtn.textContent = "Send to ETA Production";
+    });
+
+    exportBtn.addEventListener("click", () => {
+      if (!lastResponse) return;
+      const blob = new Blob([JSON.stringify(lastResponse, null, 2)], { type: "application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      const ts   = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+      a.href = url; a.download = `eta-freelance-response-${ts}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  </script>
+</body>
+</html>
